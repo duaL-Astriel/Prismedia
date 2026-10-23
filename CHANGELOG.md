@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- In the universal lightbox, multi-touch pinch gestures scale images continuously around the touch focal point, double-tapping zooms into the tapped location as the view center, and double-tapping while zoomed resets back to fit scale. While zoomed beyond fit scale, dragging pans smoothly within clamped boundaries rather than triggering swipe navigation, preserving swipe navigation when at fit scale or at the pan edge.
+
 - Rotating a mobile device to landscape while video playback is engaged automatically enters fullscreen, and rotating back to portrait exits fullscreen. The behavior is configurable via an Auto-fullscreen on landscape toggle in Player Settings.
 
 - Movie and series folders, and movie file names, tagged with a provider ID in Radarr, Sonarr, Plex, Jellyfin, or Emby style, such as `{tmdb-603}`, `[tmdbid-603]`, or `{tvdb-81189}`, identify by that exact ID instead of a title search, in Auto Identify and in Identify. TMDB reads `tmdb` tags; TheTVDB and IMDb tags go to plugins that support them. IDs already saved on an item take precedence, and contradictory tags are ignored.
