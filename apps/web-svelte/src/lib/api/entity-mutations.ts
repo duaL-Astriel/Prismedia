@@ -104,6 +104,21 @@ export function uploadEntityImageAsset(
   });
 }
 
+export function setEntityCover(
+  targetEntityId: string,
+  itemEntityId: string,
+  options?: RequestOptions,
+): Promise<EntityCard> {
+  return fetchApi<EntityCard>(`/entities/${encodeURIComponent(targetEntityId)}/cover`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ itemEntityId }),
+    signal: options?.signal,
+  });
+}
+
 export function clearEntityImageAsset(
   id: string,
   role: EntityFileRoleCode,

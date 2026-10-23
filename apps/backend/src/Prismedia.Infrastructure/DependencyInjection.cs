@@ -405,6 +405,7 @@ public static class DependencyInjection {
                 provider.GetRequiredService<PrismediaDbContext>(),
                 new EntityImageAssetStorageOptions(cacheDir),
                 provider.GetRequiredService<IGridThumbnailService>()));
+        services.AddScoped<ISetEntityCoverService, SetEntityCoverService>();
         services.AddScoped<IOpdsCatalogService, EfOpdsCatalogService>();
     }
 

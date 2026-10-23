@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- Galleries without explicit cover artwork automatically fall back to projecting their first element's cover, and people, tags, and studios without uploaded artwork fall back to their first linked media item's artwork. In the lightbox details, users can explicitly set the open image as the gallery cover, and on person, tag, and studio detail pages, associated media cards offer an accessible action to set that media's artwork as the entity's cover.
+
 - In the universal lightbox, multi-touch pinch gestures scale images continuously around the touch focal point, double-tapping zooms into the tapped location as the view center, and double-tapping while zoomed resets back to fit scale. While zoomed beyond fit scale, dragging pans smoothly within clamped boundaries rather than triggering swipe navigation, preserving swipe navigation when at fit scale or at the pan edge.
 
 - Rotating a mobile device to landscape while video playback is engaged automatically enters fullscreen, and rotating back to portrait exits fullscreen. The behavior is configurable via an Auto-fullscreen on landscape toggle in Player Settings.

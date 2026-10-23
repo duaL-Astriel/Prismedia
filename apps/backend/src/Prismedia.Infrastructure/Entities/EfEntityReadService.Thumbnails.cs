@@ -133,6 +133,18 @@ public sealed partial class EfEntityReadService {
         var collectionArtworkByEntity = resolveCollectionArtwork && !isCompact
             ? await ProjectCollectionArtworkAsync(collectionRowsNeedingArtwork, hideNsfw, enforceLibraryVisibility, cancellationToken)
             : new Dictionary<Guid, CollectionArtwork>();
+        var taxonomyRowsNeedingArtwork = isCompact
+            ? []
+            : rows
+                .Where(row => (row.KindCode == EntityKind.Person.ToCode() ||
+                               row.KindCode == EntityKind.Tag.ToCode() ||
+                               row.KindCode == EntityKind.Studio.ToCode()) &&
+                              !coverByOwner.ContainsKey(row.Id) &&
+                              !gridThumbByEntity.ContainsKey(row.Id))
+                .ToArray();
+        var taxonomyArtworkByEntity = taxonomyRowsNeedingArtwork.Length == 0
+            ? new Dictionary<Guid, (string Path, Guid EntityId)>()
+            : await ProjectTaxonomyArtworkAsync(taxonomyRowsNeedingArtwork, hideNsfw, enforceLibraryVisibility, cancellationToken);
         var technicalByEntity = await _db.EntityTechnical.AsNoTracking()
             .Where(technical => ids.Contains(technical.EntityId))
             .ToDictionaryAsync(technical => technical.EntityId, cancellationToken);
@@ -289,6 +301,11 @@ public sealed partial class EfEntityReadService {
             if (coverUrl is null && UsesRepresentativeCover(row.KindCode) && hoverImages.Count > 0) {
                 coverUrl = hoverImages[0].Path;
                 coverSourceId = hoverImages[0].EntityId;
+            }
+
+            if (coverUrl is null && taxonomyArtworkByEntity.TryGetValue(row.Id, out var taxonomyCover)) {
+                coverUrl = taxonomyCover.Path;
+                coverSourceId = taxonomyCover.EntityId;
             }
 
             // A persisted rollup is the complete artwork source when the entity has no original
@@ -506,6 +523,66 @@ public sealed partial class EfEntityReadService {
             }
         }
 
+        return result;
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, (string Path, Guid EntityId)>> ProjectTaxonomyArtworkAsync(
+        IReadOnlyList<EntityRow> taxonomyRows,
+        bool hideNsfw,
+        bool enforceLibraryVisibility,
+        CancellationToken cancellationToken) {
+        var taxonomyIds = taxonomyRows.Select(row => row.Id).ToArray();
+        var mediaKindCodes = EntityKindRegistry.All
+            .Where(def => def.Category == EntityKindCategory.Media)
+            .Select(def => def.Code)
+            .ToHashSet();
+
+        var links = await _db.EntityRelationshipLinks.AsNoTracking()
+            .Where(link => taxonomyIds.Contains(link.TargetEntityId) || taxonomyIds.Contains(link.EntityId))
+            .OrderBy(link => link.SortOrder)
+            .ThenBy(link => link.EntityId)
+            .ToArrayAsync(cancellationToken);
+
+        var linksByTaxonomy = taxonomyIds.ToDictionary(
+            id => id,
+            id => links
+                .Where(link => link.TargetEntityId == id || link.EntityId == id)
+                .Select(link => link.TargetEntityId == id ? link.EntityId : link.TargetEntityId)
+                .Distinct()
+                .ToArray());
+
+        var allMediaCandidateIds = linksByTaxonomy.Values.SelectMany(ids => ids).Distinct().ToArray();
+        if (allMediaCandidateIds.Length == 0) {
+            return new Dictionary<Guid, (string Path, Guid EntityId)>();
+        }
+
+        var mediaQuery = _db.Entities.AsNoTracking()
+            .Where(e => allMediaCandidateIds.Contains(e.Id) && mediaKindCodes.Contains(e.KindCode));
+        if (enforceLibraryVisibility) {
+            mediaQuery = ApplyEnabledLibraryVisibility(mediaQuery);
+        }
+        mediaQuery = ApplyNsfwVisibility(mediaQuery, hideNsfw);
+        var validMediaIds = await mediaQuery.Select(e => e.Id).ToHashSetAsync(cancellationToken);
+
+        var firstMediaByTaxonomy = new Dictionary<Guid, Guid>();
+        foreach (var pair in linksByTaxonomy) {
+            var firstMediaId = pair.Value.FirstOrDefault(id => validMediaIds.Contains(id));
+            if (firstMediaId != Guid.Empty) {
+                firstMediaByTaxonomy[pair.Key] = firstMediaId;
+            }
+        }
+
+        if (firstMediaByTaxonomy.Count == 0) {
+            return new Dictionary<Guid, (string Path, Guid EntityId)>();
+        }
+
+        var coversByMedia = await LoadCoverPathsAsync(firstMediaByTaxonomy.Values.Distinct().ToArray(), cancellationToken);
+        var result = new Dictionary<Guid, (string Path, Guid EntityId)>();
+        foreach (var (taxonomyId, mediaId) in firstMediaByTaxonomy) {
+            if (coversByMedia.TryGetValue(mediaId, out var path)) {
+                result[taxonomyId] = (path, mediaId);
+            }
+        }
         return result;
     }
 

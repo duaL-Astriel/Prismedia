@@ -32,6 +32,7 @@
     showBadges = true,
     showWantedBadge = true,
     subtitleContent,
+    cardAction,
     titleAlign = "left",
     titleSize = "default",
   }: EntityThumbnailProps = $props();
@@ -142,7 +143,7 @@
     {showBadges}
     {showWantedBadge}
   />
-  <EntityThumbnailInfo {card} {mediaOnly} {layout} {showBadges} {showWantedBadge} {subtitleContent} {titleAlign} {titleSize} />
+  <EntityThumbnailInfo {card} {cardAction} {mediaOnly} {layout} {showBadges} {showWantedBadge} {subtitleContent} {titleAlign} {titleSize} />
 </svelte:element>
 
 <style>

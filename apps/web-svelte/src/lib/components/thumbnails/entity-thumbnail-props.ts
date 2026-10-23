@@ -35,6 +35,7 @@ export interface EntityThumbnailProps {
   /** Show wanted/status on grid artwork or in list captions. Off where the host renders status itself. */
   showWantedBadge?: boolean;
   subtitleContent?: Snippet<[EntityThumbnailCard]>;
+  cardAction?: Snippet<[EntityThumbnailCard]>;
   titleAlign?: EntityThumbnailTitleAlign;
   titleSize?: EntityThumbnailTitleSize;
 }

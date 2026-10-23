@@ -12,6 +12,7 @@ public static class EntityEndpoints {
         group.MapEntityHoverImagesEndpoint();
         group.MapEntityChildrenEndpoint();
         group.MapEntityImageAssetEndpoint();
+        group.MapSetEntityCoverEndpoint();
         group.MapEntityRatingEndpoint();
         group.MapEntityFlagsEndpoint();
         group.MapEntityFileEndpoint();
