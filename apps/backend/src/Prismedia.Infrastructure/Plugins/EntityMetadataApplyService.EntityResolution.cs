@@ -59,7 +59,9 @@ public sealed partial class EntityMetadataApplyService {
 
         return string.IsNullOrWhiteSpace(title)
             ? null
-            : await FindEntityByTitleAsync(kindCode, title, parentEntityId, cancellationToken);
+            : kindCode == EntityKind.Tag.ToCode()
+                ? await FindTagByNameOrAliasAsync(title, cancellationToken)
+                : await FindEntityByTitleAsync(kindCode, title, parentEntityId, cancellationToken);
     }
 
     /// <summary>
@@ -132,6 +134,28 @@ public sealed partial class EntityMetadataApplyService {
                 (parentEntityId == null || row.ParentEntityId == parentEntityId) &&
                 row.Title.ToLower() == lowered,
                 cancellationToken);
+    }
+
+    /// <summary>
+    /// Matches a tag entity by canonical title or any registered alias (case-insensitive).
+    /// </summary>
+    private async Task<EntityRow?> FindTagByNameOrAliasAsync(string name, CancellationToken cancellationToken) {
+        var tagCode = EntityKind.Tag.ToCode();
+        var byTitle = await FindEntityByTitleAsync(tagCode, name, parentEntityId: null, cancellationToken);
+        if (byTitle is not null) {
+            return byTitle;
+        }
+
+        var lowered = name.Trim().ToLower();
+        var aliasRow = _db.TagAliases.Local.FirstOrDefault(a => a.Alias.ToLower() == lowered)
+            ?? await _db.TagAliases.AsNoTracking().FirstOrDefaultAsync(a => a.Alias.ToLower() == lowered, cancellationToken);
+
+        if (aliasRow is not null) {
+            return _db.Entities.Local.FirstOrDefault(e => e.Id == aliasRow.TagId && _db.Entry(e).State != EntityState.Deleted)
+                ?? await _db.Entities.FirstOrDefaultAsync(e => e.Id == aliasRow.TagId, cancellationToken);
+        }
+
+        return null;
     }
 
     private EntityRow CreateEntity(string kind, string title, DateTimeOffset now) {

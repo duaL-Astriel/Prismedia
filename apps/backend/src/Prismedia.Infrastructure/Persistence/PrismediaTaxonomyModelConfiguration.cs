@@ -31,5 +31,14 @@ internal static partial class PrismediaModelConfiguration {
             entity.Property(row => row.IgnoreAutoTag).HasColumnName("ignore_auto_tag");
             entity.HasOne<EntityRow>().WithOne().HasForeignKey<TagDetailRow>(row => row.EntityId).OnDelete(DeleteBehavior.Cascade);
         });
+
+        modelBuilder.Entity<TagAliasRow>(entity => {
+            entity.ToTable("tag_aliases");
+            entity.HasKey(row => new { row.TagId, row.Alias });
+            entity.Property(row => row.TagId).HasColumnName("tag_id");
+            entity.Property(row => row.Alias).HasColumnName("alias").HasMaxLength(256).IsRequired();
+            entity.HasIndex(row => row.Alias);
+            entity.HasOne<EntityRow>().WithMany().HasForeignKey(row => row.TagId).OnDelete(DeleteBehavior.Cascade);
+        });
     }
 }

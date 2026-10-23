@@ -276,6 +276,7 @@ public static class DependencyInjection {
         services.AddScoped<IEntityPositionEnricher>(provider =>
             provider.GetRequiredService<EntityMetadataApplyService>());
         services.AddScoped<IEntityManagementService, EntityManagementService>();
+        services.AddScoped<ITagManagementService, TagManagementService>();
         services.AddScoped<IMediaEntityDeletionService, MediaEntityDeletionService>();
         services.AddScoped<IIdentifyTargetEligibilityService, EfIdentifyTargetEligibilityService>();
         services.AddScoped<IdentifyPluginService>();

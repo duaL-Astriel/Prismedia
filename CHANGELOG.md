@@ -20,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - Rotating a mobile device to landscape while video playback is engaged automatically enters fullscreen, and rotating back to portrait exits fullscreen. The behavior is configurable via an Auto-fullscreen on landscape toggle in Player Settings.
 
+- Tags support aliases and merging. Aliases allow multiple names to resolve to the same canonical tag across search, collection rules, library scans, and metadata plugins. Tag detail pages display active aliases with options to add or remove them, as well as a merge action to combine duplicate tags into a single canonical tag while consolidating all relationships, aliases, and media links without duplicates.
+
 - Movie and series folders, and movie file names, tagged with a provider ID in Radarr, Sonarr, Plex, Jellyfin, or Emby style, such as `{tmdb-603}`, `[tmdbid-603]`, or `{tvdb-81189}`, identify by that exact ID instead of a title search, in Auto Identify and in Identify. TMDB reads `tmdb` tags; TheTVDB and IMDb tags go to plugins that support them. IDs already saved on an item take precedence, and contradictory tags are ignored.
 
 - Audiobook files with embedded chapters, such as M4B, play chapter by chapter, like a book with one file per chapter. Next and Previous move between chapters; the timeline, elapsed time, and lock-screen controls cover the current chapter; Up Next lists the remaining chapters; and repeat-one repeats the current chapter. Each chapter plays under its mapped ebook chapter's title, falling back to the title in the audio file and then the Book's title. Listening progress and resume positions work as before.

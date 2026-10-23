@@ -283,6 +283,9 @@ public sealed class CollectionRuleEngine(
         var nameParams = string.Join(", ", names.Select(n => ctx.AddParam(n, NpgsqlDbType.Text)));
         var kindParam = ctx.AddParam(taxonomyKindCode, NpgsqlDbType.Text);
         var relationshipParam = ctx.AddParam(relationshipCode, NpgsqlDbType.Text);
+        var matchCondition = taxonomyKindCode == EntityKind.Tag.ToCode()
+            ? $"(te.title IN ({nameParams}) OR EXISTS (SELECT 1 FROM tag_aliases ta WHERE ta.tag_id = te.id AND ta.alias IN ({nameParams})))"
+            : $"te.title IN ({nameParams})";
 
         var subquery = $@"e.id IN (
             SELECT rl.entity_id FROM entity_relationship_links rl
@@ -290,7 +293,7 @@ public sealed class CollectionRuleEngine(
             WHERE rl.relationship_code = {relationshipParam}
                 AND rl.target_kind_code = {kindParam}
                 AND te.kind_code = {kindParam}
-                AND te.title IN ({nameParams})
+                AND {matchCondition}
         )";
 
         return op switch {

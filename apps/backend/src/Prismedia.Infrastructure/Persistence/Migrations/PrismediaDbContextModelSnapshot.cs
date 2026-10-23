@@ -2593,7 +2593,7 @@ namespace Prismedia.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("text")
                         .HasColumnName("sort_title")
-                        .HasComputedColumnSql("trim(CASE\n    WHEN lower(title) LIKE 'the %' THEN substr(title, 5)\n    WHEN lower(title) LIKE 'an %' THEN substr(title, 4)\n    WHEN lower(title) LIKE 'a %' THEN substr(title, 3)\n    ELSE title\nEND)", true);
+                        .HasComputedColumnSql("trim(CASE\r\n    WHEN lower(title) LIKE 'the %' THEN substr(title, 5)\r\n    WHEN lower(title) LIKE 'an %' THEN substr(title, 4)\r\n    WHEN lower(title) LIKE 'a %' THEN substr(title, 3)\r\n    ELSE title\r\nEND)", true);
 
                     b.Property<int?>("SortOrder")
                         .HasColumnType("integer")
@@ -5075,6 +5075,24 @@ namespace Prismedia.Infrastructure.Persistence.Migrations
                     b.ToTable("scanned_files", (string)null);
                 });
 
+            modelBuilder.Entity("Prismedia.Infrastructure.Persistence.Entities.TagAliasRow", b =>
+                {
+                    b.Property<Guid>("TagId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tag_id");
+
+                    b.Property<string>("Alias")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("alias");
+
+                    b.HasKey("TagId", "Alias");
+
+                    b.HasIndex("Alias");
+
+                    b.ToTable("tag_aliases", (string)null);
+                });
+
             modelBuilder.Entity("Prismedia.Infrastructure.Persistence.Entities.TagDetailRow", b =>
                 {
                     b.Property<Guid>("EntityId")
@@ -6444,6 +6462,15 @@ namespace Prismedia.Infrastructure.Persistence.Migrations
                     b.HasOne("Prismedia.Infrastructure.Persistence.Entities.LibraryRootRow", null)
                         .WithMany()
                         .HasForeignKey("LibraryRootId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Prismedia.Infrastructure.Persistence.Entities.TagAliasRow", b =>
+                {
+                    b.HasOne("Prismedia.Infrastructure.Persistence.Entities.EntityRow", null)
+                        .WithMany()
+                        .HasForeignKey("TagId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
