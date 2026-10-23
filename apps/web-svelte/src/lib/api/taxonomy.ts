@@ -6,8 +6,9 @@ import {
   deleteStudio,
   deleteTag,
 } from "$lib/api/generated/prismedia";
-import type { EntityCreateRequest } from "$lib/api/generated/model";
+import type { EntityCard, EntityCreateRequest } from "$lib/api/generated/model";
 import { requestInit, unwrapGenerated, type RequestOptions } from "$lib/api/generated-response";
+import { fetchApi } from "$lib/api/orval-fetch";
 import {
   ENTITY_KIND,
   ENTITY_KINDS_SUPPORTING_MANUAL_MANAGEMENT,
@@ -55,4 +56,42 @@ export async function deleteTaxonomyEntity(
 ): Promise<void> {
   const response = await deleters[kind](id, requestInit(options));
   unwrapGenerated<void>(response, "Failed to delete entity", [204]);
+}
+
+/** Adds an alias to a tag. */
+export async function addTagAlias(
+  tagId: string,
+  alias: string,
+  options?: RequestOptions,
+): Promise<EntityCard> {
+  return fetchApi<EntityCard>(`/api/tags/${encodeURIComponent(tagId)}/aliases`, {
+    method: "POST",
+    body: JSON.stringify({ alias }),
+    ...requestInit(options),
+  });
+}
+
+/** Removes an alias from a tag. */
+export async function removeTagAlias(
+  tagId: string,
+  alias: string,
+  options?: RequestOptions,
+): Promise<EntityCard> {
+  return fetchApi<EntityCard>(`/api/tags/${encodeURIComponent(tagId)}/aliases/${encodeURIComponent(alias)}`, {
+    method: "DELETE",
+    ...requestInit(options),
+  });
+}
+
+/** Merges a source tag into the canonical tag. */
+export async function mergeTag(
+  canonicalTagId: string,
+  sourceTagId: string,
+  options?: RequestOptions,
+): Promise<EntityCard> {
+  return fetchApi<EntityCard>(`/api/tags/${encodeURIComponent(canonicalTagId)}/merge`, {
+    method: "POST",
+    body: JSON.stringify({ sourceTagId }),
+    ...requestInit(options),
+  });
 }
