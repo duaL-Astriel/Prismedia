@@ -70,6 +70,13 @@
     readQualityPreference,
     writeQualityPreference,
   } from "$lib/player/quality-preference";
+  import {
+    clampVolume,
+    onVolumePreferenceChange,
+    readVolumePreference,
+    resolveUnmutedVolume,
+    writeVolumePreference,
+  } from "$lib/player/volume-preference";
   import { resolveInitialVideoPlayerSourcePolicy } from "$lib/player/video-player-source-policy";
   import { isFatalVideoDecodeError } from "$lib/player/video-player-errors";
   import { shouldPreferNativeHLS } from "$lib/player/native-hls";
@@ -250,8 +257,9 @@
   let playTracked = false;
   let endedTracked = false;
   let lastSourceKey = "";
+  const initialVolumePref = readVolumePreference();
   let muteTouched = false;
-  let lastNonZeroVolume = 1;
+  let lastNonZeroVolume = initialVolumePref.lastNonZeroVolume;
   let pendingSeekTime: number | null = null;
   let pendingAutoPlay = $state(false);
   let markerChaptersTrack: TextTrack | null = null;
@@ -277,8 +285,8 @@
   let playing = $state(false);
   let buffering = $state(false);
   // svelte-ignore state_referenced_locally
-  let muted = $state(initialMuted);
-  let volume = $state(1);
+  let muted = $state(initialMuted ? true : initialVolumePref.muted);
+  let volume = $state(initialVolumePref.volume);
   let playbackRate = $state(1);
   let showControls = $state(true);
   let bufferAhead = $state(0);
@@ -692,12 +700,16 @@
   }
 
   function applyInitialMuted() {
-    if (!initialMuted || muteTouched) return;
-    syncMutedState(true, 0);
+    if (muteTouched) return;
+    if (initialMuted) {
+      syncMutedState(true, volume);
+    } else {
+      const pref = readVolumePreference();
+      syncMutedState(pref.muted, pref.volume);
+    }
   }
 
   function scheduleInitialMutedSync() {
-    if (!initialMuted || muteTouched) return;
     clearInitialMutedSync();
     let attempts = 0;
     const sync = () => {
@@ -842,13 +854,21 @@
     clearInitialMutedSync();
     const video = mediaElement();
     const nextMuted = !(player?.muted || video?.muted || muted);
-    syncMutedState(nextMuted, nextMuted ? 0 : lastNonZeroVolume || 1);
+    let nextVolume = volume;
+    if (!nextMuted && nextVolume === 0) {
+      nextVolume = resolveUnmutedVolume(nextVolume);
+    }
+    syncMutedState(nextMuted, nextVolume);
+    writeVolumePreference({ volume: nextVolume, muted: nextMuted });
   }
 
   function handleVolumeChange(next: number) {
     muteTouched = true;
     clearInitialMutedSync();
-    syncMutedState(next === 0, next);
+    const clamped = clampVolume(next);
+    const nextMuted = clamped > 0 ? false : muted;
+    syncMutedState(nextMuted, clamped);
+    writeVolumePreference({ volume: clamped, muted: nextMuted });
   }
 
   function applyPlaybackRate(nextRate: number) {
@@ -1090,7 +1110,10 @@
     playTracked = false;
     endedTracked = false;
     muteTouched = false;
-    lastNonZeroVolume = 1;
+    const volumePref = readVolumePreference();
+    volume = volumePref.volume;
+    lastNonZeroVolume = volumePref.lastNonZeroVolume;
+    muted = initialMuted ? true : volumePref.muted;
     autoSelected = false;
     scheduleInitialMutedSync();
   });
@@ -1252,6 +1275,18 @@
   });
 
   $effect(() => {
+    return onVolumePreferenceChange((pref) => {
+      if (muteTouched) return;
+      volume = pref.volume;
+      lastNonZeroVolume = pref.lastNonZeroVolume;
+      if (!initialMuted) {
+        muted = pref.muted;
+      }
+      syncMutedState(muted, volume);
+    });
+  });
+
+  $effect(() => {
     const el = player;
     if (!el) return;
     scheduleInitialMutedSync();
@@ -1333,8 +1368,9 @@
       updateBuffered();
     };
     const onNativeVolumeChange = () => {
-      muted = video.muted || video.volume === 0;
+      muted = video.muted;
       volume = video.volume;
+      if (volume > 0) lastNonZeroVolume = volume;
     };
     const onNativeRateChange = () => {
       playbackRate = video.playbackRate;
@@ -1477,7 +1513,7 @@
 
   function handleVolumeChangeEvent(_event: Event) {
     const video = mediaElement();
-    muted = Boolean(player?.muted || video?.muted || player?.volume === 0 || video?.volume === 0);
+    muted = Boolean(player?.muted ?? video?.muted ?? muted);
     volume = player?.volume ?? video?.volume ?? volume;
     if (volume > 0) lastNonZeroVolume = volume;
   }
@@ -1562,7 +1598,8 @@
         posterLoad="eager"
         autoPlay={autoPlay}
         loop={autoRepeat}
-        muted={initialMuted}
+        muted={initialMuted ? true : muted}
+        volume={volume}
         bind:this={player}
         onclick={(event) => {
           if (!fullChrome) {

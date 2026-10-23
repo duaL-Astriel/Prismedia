@@ -15,6 +15,12 @@ import {
   lastAudioChapterStart,
   type AudioChapterSpan,
 } from "$lib/player/audio-chapters";
+import {
+  clampVolume,
+  hasStoredVolumePreference,
+  readVolumePreference,
+  writeVolumePreference,
+} from "$lib/player/volume-preference";
 import { createOptionalContext } from "$lib/utils/context";
 
 export type RepeatMode = MusicPlayerRepeatModeCode;
@@ -137,8 +143,8 @@ export class AudioPlaybackStore {
   shuffle = $state(false);
   repeat = $state<RepeatMode>(MUSIC_PLAYER_REPEAT_MODE.off);
   context = $state.raw<PlaybackContext | null>(null);
-  volume = $state(1);
-  muted = $state(false);
+  volume = $state(readVolumePreference().volume);
+  muted = $state(readVolumePreference().muted);
   collapsed = $state(false);
   collapsedSide = $state<MiniPlayerSide>(MUSIC_PLAYER_MINI_SIDE.left);
 
@@ -422,8 +428,16 @@ export class AudioPlaybackStore {
     this.context = state.context ?? null;
     this.duration = queue[this.order[this.position] ?? -1]?.duration ?? 0;
     this.currentTime = Math.max(0, Math.min(state.currentTime, this.duration || Number.POSITIVE_INFINITY));
-    this.volume = Math.max(0, Math.min(1, state.volume));
-    this.muted = state.muted;
+    if (hasStoredVolumePreference()) {
+      const pref = readVolumePreference();
+      this.volume = pref.volume;
+      this.muted = pref.muted;
+    } else {
+      this.volume = clampVolume(state.volume);
+      this.muted = state.muted;
+      writeVolumePreference({ volume: this.volume, muted: this.muted });
+    }
+
     this.collapsed = state.collapsed;
     this.collapsedSide = state.collapsedSide;
   }
