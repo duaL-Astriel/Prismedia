@@ -51,9 +51,19 @@
   import { VIDEO_PLAYBACK_METHOD, type PlaybackModeCode } from "$lib/api/generated/codes";
   import {
     enterMediaFullscreen,
-    exitDocumentFullscreen,
-    isDocumentFullscreen,
+    evaluateFullscreenChange,
+    evaluateOrientationDecision,
+    exitMediaFullscreen,
+    getDeviceOrientation,
+    isMediaFullscreen,
+    isTouchViewport,
+    subscribeOrientationChange,
+    type OrientationFullscreenState,
   } from "$lib/fullscreen";
+  import {
+    readAutoFullscreenPreference,
+    writeAutoFullscreenPreference,
+  } from "$lib/player/auto-fullscreen-preference";
   import { buildMediaArtwork } from "$lib/media-session";
   import {
     abortVideoElementLoad,
@@ -298,6 +308,25 @@
   let timelineTrickplayError = $state(false);
   let settingsMenuRendered = $state(false);
   let settingsView = $state<SettingsView>("root");
+  let autoFullscreenOnLandscape = $state(readAutoFullscreenPreference());
+  let orientationState = $state<OrientationFullscreenState>({
+    lastOrientation: null,
+    manualExitOrientation: null,
+  });
+
+  function handleAutoFullscreenChange(enabled: boolean) {
+    autoFullscreenOnLandscape = enabled;
+    writeAutoFullscreenPreference(enabled);
+  }
+
+  function handleFullscreenStateChange() {
+    const isFullscreen = isMediaFullscreen(videoEl);
+    orientationState = evaluateFullscreenChange(
+      isFullscreen,
+      getDeviceOrientation(),
+      orientationState,
+    );
+  }
   let internalSubtitleId = $state<string | null>(null);
   let activeTrackCues = $state<SubtitleCue[]>([]);
   let activeCueText = $state<string | null>(null);
@@ -972,8 +1001,9 @@
   }
 
   async function toggleFullscreen() {
-    if (isDocumentFullscreen()) {
-      exitDocumentFullscreen();
+    if (isMediaFullscreen(videoEl)) {
+      exitMediaFullscreen(videoEl);
+      orientationState = evaluateFullscreenChange(false, getDeviceOrientation(), orientationState);
       return;
     }
     if (!containerEl) return;
@@ -1351,6 +1381,7 @@
     video.addEventListener("seeked", onNativeSeeked);
     video.addEventListener("volumechange", onNativeVolumeChange);
     video.addEventListener("ratechange", onNativeRateChange);
+    video.addEventListener("webkitendfullscreen", handleFullscreenStateChange);
     return () => {
       video.removeEventListener("timeupdate", onNativeTimeUpdate);
       video.removeEventListener("progress", onProgress);
@@ -1364,6 +1395,7 @@
       video.removeEventListener("seeked", onNativeSeeked);
       video.removeEventListener("volumechange", onNativeVolumeChange);
       video.removeEventListener("ratechange", onNativeRateChange);
+      video.removeEventListener("webkitendfullscreen", handleFullscreenStateChange);
     };
   });
 
@@ -1375,12 +1407,49 @@
     scheduleInitialMutedSync();
     if (showCastControls && fullChrome) void loadGoogleCastFramework();
 
+    orientationState = {
+      lastOrientation: getDeviceOrientation(),
+      manualExitOrientation: null,
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenStateChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenStateChange);
+
+    const unsubOrientation = subscribeOrientationChange((newOrientation) => {
+      const isEngaged = playing || playTracked;
+      const isFullscreen = isMediaFullscreen(videoEl);
+      const decision = evaluateOrientationDecision({
+        currentOrientation: newOrientation,
+        autoFullscreenEnabled: autoFullscreenOnLandscape,
+        isTouchViewport: isTouchViewport(),
+        isEngaged,
+        isFullscreen,
+        state: orientationState,
+      });
+      orientationState = decision.nextState;
+
+      if (decision.action === "enter-fullscreen") {
+        if (containerEl) {
+          void enterMediaFullscreen(containerEl, videoEl).then((entered) => {
+            if (!entered) {
+              playerNotice = "Fullscreen is not available for this browser.";
+            }
+          });
+        }
+      } else if (decision.action === "exit-fullscreen") {
+        exitMediaFullscreen(videoEl);
+      }
+    });
+
     const handleKey = createVideoKeyboardHandler({ togglePlay, seek, toggleMute, toggleFullscreen });
 
     if (enableKeyboardShortcuts) {
       window.addEventListener("keydown", handleKey);
     }
     return () => {
+      unsubOrientation();
+      document.removeEventListener("fullscreenchange", handleFullscreenStateChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenStateChange);
       abortVideoElementLoad(mediaElement());
       clearControlsTimer();
       clearInitialMutedSync();
@@ -1725,13 +1794,15 @@
           activeSubtitleId={activeSubtitleId}
           {activeSubtitleLabel}
           {appearance}
+          {autoFullscreenOnLandscape}
           open={settingsMenuRendered}
-          portalTarget={settingsMenuRendered && isDocumentFullscreen() ? containerEl : null}
+          portalTarget={settingsMenuRendered && isMediaFullscreen(videoEl) ? containerEl : null}
           {displayedAudioTrackLabel}
           {displayedAudioTracks}
           {localAppearance}
           onAppearanceChange={handleAppearanceChange}
           onAppearanceReset={handleAppearanceReset}
+          onAutoFullscreenChange={handleAutoFullscreenChange}
           onClose={closeSettings}
           onOpenView={openSettings}
           onPlaybackRateChange={applyPlaybackRate}

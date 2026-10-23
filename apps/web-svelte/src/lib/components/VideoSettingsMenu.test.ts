@@ -86,8 +86,25 @@ describe("VideoSettingsMenu", () => {
       }),
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /English - English embedded/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /English embedded/i }));
 
     expect(onSelectSubtitle).toHaveBeenCalledWith("sub-1");
+  });
+
+  it("renders auto-fullscreen toggle when onAutoFullscreenChange is provided", async () => {
+    const onAutoFullscreenChange = vi.fn();
+    render(VideoSettingsMenu, {
+      props: baseProps({
+        autoFullscreenOnLandscape: true,
+        onAutoFullscreenChange,
+      }),
+    });
+
+    const toggle = screen.getByRole("switch", { name: /Auto-fullscreen on landscape/i });
+    expect(toggle).toBeInTheDocument();
+    expect(toggle).toBeChecked();
+
+    await fireEvent.click(toggle);
+    expect(onAutoFullscreenChange).toHaveBeenCalledWith(false);
   });
 });

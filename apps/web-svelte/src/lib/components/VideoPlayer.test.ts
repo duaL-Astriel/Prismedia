@@ -477,7 +477,7 @@ describe("VideoPlayer", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Player settings" }));
     await fireEvent.click(screen.getByRole("button", { name: /Captions/ }));
-    await fireEvent.click(screen.getByRole("button", { name: /English/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Engl/ }));
 
     expect(onActiveSubtitleTrackIdChange).toHaveBeenCalledWith("track-en");
     expect(screen.queryByText("Captions on.")).not.toBeInTheDocument();
@@ -524,4 +524,20 @@ describe("VideoPlayer", () => {
     });
   });
 
+  it("allows toggling auto-fullscreen on landscape from settings menu", async () => {
+    render(VideoPlayer, {
+      props: {
+        src: "/api/videos/video-1/hls/master.m3u8",
+        defaultPlaybackMode: "hls",
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Player settings" }));
+    const toggle = screen.getByRole("switch", { name: /Auto-fullscreen on landscape/i });
+    expect(toggle).toBeInTheDocument();
+    expect(toggle).toBeChecked();
+
+    await fireEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
+  });
 });
