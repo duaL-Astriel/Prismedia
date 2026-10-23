@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button, Slider } from "@prismedia/ui-svelte";
   import { Volume1, Volume2, VolumeX } from "@lucide/svelte";
+  import { isEffectivelyMuted } from "$lib/player/volume-preference";
   import {
     formatAudioPlaybackRate,
     nextAudioPlaybackRate,
@@ -28,7 +29,8 @@
     onVolume,
   }: Props = $props();
 
-  const VolumeIcon = $derived(muted || volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2);
+  const displayMuted = $derived(isEffectivelyMuted(muted, volume));
+  const VolumeIcon = $derived(displayMuted ? VolumeX : volume < 0.5 ? Volume1 : Volume2);
 </script>
 
 <div class="group/vol flex min-w-0 items-center gap-1">
@@ -43,11 +45,11 @@
       {formatAudioPlaybackRate(playbackRate)}
     </Button>
   {:else}
-    <Button variant="ghost" size="icon-sm" type="button" onclick={onMute} aria-label={muted ? "Unmute" : "Mute"}>
+    <Button variant="ghost" size="icon-sm" type="button" onclick={onMute} aria-label={displayMuted ? "Unmute" : "Mute"} aria-pressed={displayMuted}>
       <VolumeIcon class="h-3 w-3" />
     </Button>
     <div class="w-16">
-      <Slider type="single" min={0} max={1} step={0.01} value={muted ? 0 : volume} onValueChange={onVolume} thumbLabel="Volume" />
+      <Slider type="single" min={0} max={1} step={0.01} value={displayMuted ? 0 : volume} onValueChange={onVolume} thumbLabel="Volume" />
     </div>
   {/if}
 </div>
