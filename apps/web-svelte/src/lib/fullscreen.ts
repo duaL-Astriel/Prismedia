@@ -50,6 +50,33 @@ export function exitDocumentFullscreen(): void {
   );
 }
 
+export function isMediaFullscreen(video?: HTMLVideoElement | null): boolean {
+  if (isDocumentFullscreen()) return true;
+  const videoWebKit = video as
+    | (HTMLVideoElement & { webkitDisplayingFullscreen?: boolean })
+    | null
+    | undefined;
+  return Boolean(videoWebKit?.webkitDisplayingFullscreen);
+}
+
+export function exitMediaFullscreen(video?: HTMLVideoElement | null): void {
+  exitDocumentFullscreen();
+  const videoWebKit = video as
+    | (HTMLVideoElement & {
+        webkitExitFullscreen?: () => void;
+        webkitDisplayingFullscreen?: boolean;
+      })
+    | null
+    | undefined;
+  if (videoWebKit?.webkitDisplayingFullscreen && videoWebKit.webkitExitFullscreen) {
+    try {
+      videoWebKit.webkitExitFullscreen();
+    } catch {
+      /* noop */
+    }
+  }
+}
+
 /** Enter fullscreen: try the container (keeps custom controls on desktop), then the video element, then WebKit native video fullscreen (iOS). */
 export async function enterMediaFullscreen(
   container: Element,
@@ -84,3 +111,16 @@ export async function enterMediaFullscreen(
 
   return false;
 }
+
+export {
+  evaluateFullscreenChange,
+  evaluateOrientationDecision,
+  getDeviceOrientation,
+  isTouchViewport,
+  subscribeOrientationChange,
+  type DeviceOrientation,
+  type OrientationDecisionParams,
+  type OrientationDecisionResult,
+  type OrientationFullscreenAction,
+  type OrientationFullscreenState,
+} from "$lib/player/orientation-fullscreen";
