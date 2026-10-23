@@ -28,4 +28,14 @@ describe("auto-fullscreen-preference", () => {
     writeAutoFullscreenPreference(true);
     expect(readAutoFullscreenPreference()).toBe(true);
   });
+
+  it("stores the preference under the prismedia:player:auto-fullscreen-landscape key", () => {
+    writeAutoFullscreenPreference(false);
+    expect(localStorage.getItem("prismedia:player:auto-fullscreen-landscape")).toBe("false");
+  });
+
+  it("reads a value saved under the namespaced key", () => {
+    localStorage.setItem("prismedia:player:auto-fullscreen-landscape", "false");
+    expect(readAutoFullscreenPreference()).toBe(false);
+  });
 });

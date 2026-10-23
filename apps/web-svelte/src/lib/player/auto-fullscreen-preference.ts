@@ -4,7 +4,7 @@
  * Defaults to true.
  */
 
-const STORAGE_KEY = "prismedia.player.autoFullscreenOnLandscape";
+const STORAGE_KEY = "prismedia:player:auto-fullscreen-landscape";
 
 /** Reads the saved auto-fullscreen preference, defaulting to true when unset or unavailable. */
 export function readAutoFullscreenPreference(): boolean {
