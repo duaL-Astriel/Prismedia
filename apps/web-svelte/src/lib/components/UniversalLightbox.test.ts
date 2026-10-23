@@ -85,6 +85,17 @@ const verticalVideoFromThumbnail: UniversalLightboxEntity = {
 
 describe("UniversalLightbox", () => {
   beforeEach(() => {
+    if (!globalThis.PointerEvent) {
+      globalThis.PointerEvent = class PointerEvent extends MouseEvent {
+        pointerId: number;
+        pointerType: string;
+        constructor(type: string, params: PointerEventInit = {}) {
+          super(type, params);
+          this.pointerId = params.pointerId ?? 0;
+          this.pointerType = params.pointerType ?? "";
+        }
+      } as unknown as typeof PointerEvent;
+    }
     globalThis.ResizeObserver = class {
       observe() {}
       disconnect() {}
@@ -325,6 +336,105 @@ describe("UniversalLightbox", () => {
     expect(shell).not.toHaveClass("has-natural-ratio");
     expect(document.body.querySelector(".lightbox-media-guard")).toBeInTheDocument();
     expect(shell).toHaveStyle("--lightbox-video-aspect-ratio: 16 / 9");
+  });
+
+  it("zooms into focal point on double-click and resets on second double-click", async () => {
+    render(UniversalLightboxHarness, {
+      props: { entities: [still], initialIndex: 0, onClose: vi.fn() },
+    });
+
+    const stage = document.querySelector(".stage") as HTMLDivElement;
+    expect(stage).toBeInTheDocument();
+    stage.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      width: 1000,
+      height: 800,
+      right: 1000,
+      bottom: 800,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    });
+
+    const img = document.querySelector("img.lightbox-image") as HTMLImageElement;
+    await fireEvent.load(img);
+    await tick();
+
+    const mediaFrame = document.querySelector("[data-lightbox-media]") as HTMLElement;
+    expect(mediaFrame).toBeInTheDocument();
+    expect(mediaFrame.style.transform).toContain("scale(1.225)");
+
+    // Double-click at (600, 400). Center of stage is (500, 400), so focal is (+100, 0).
+    await fireEvent.dblClick(stage, { clientX: 600, clientY: 400 });
+    await tick();
+
+    // Should be zoomed in to 2.5x fitScale (1.225 * 2.5 = 3.0625) and translated left (-250px)
+    expect(mediaFrame.style.transform).toContain("scale(3.0625)");
+    expect(mediaFrame.style.transform).toContain("translate(-250px");
+
+    // Second double click while zoomed should reset transform back to fit
+    await fireEvent.dblClick(stage, { clientX: 600, clientY: 400 });
+    await tick();
+
+    expect(mediaFrame.style.transform).toContain("scale(1.225)");
+    expect(mediaFrame.style.transform).toContain("translate(0px, 0px)");
+  });
+
+  it("scales continuously with multi-pointer pinch gestures", async () => {
+    render(UniversalLightboxHarness, {
+      props: { entities: [still], initialIndex: 0, onClose: vi.fn() },
+    });
+
+    const stage = document.querySelector(".stage") as HTMLDivElement;
+    expect(stage).toBeInTheDocument();
+    stage.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      width: 1000,
+      height: 800,
+      right: 1000,
+      bottom: 800,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    });
+
+    const img = document.querySelector("img.lightbox-image") as HTMLImageElement;
+    await fireEvent.load(img);
+    await tick();
+
+    const mediaFrame = document.querySelector("[data-lightbox-media]") as HTMLElement;
+    expect(mediaFrame).toBeInTheDocument();
+
+    const sendPointer = (type: string, init: { pointerId: number; clientX: number; clientY: number }) => {
+      const ev = new PointerEvent(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, "pointerId", { configurable: true, value: init.pointerId });
+      Object.defineProperty(ev, "clientX", { configurable: true, value: init.clientX });
+      Object.defineProperty(ev, "clientY", { configurable: true, value: init.clientY });
+      Object.defineProperty(ev, "pointerType", { configurable: true, value: "touch" });
+      stage.dispatchEvent(ev);
+    };
+
+    // Pointer 1 down at (450, 400)
+    sendPointer("pointerdown", { pointerId: 1, clientX: 450, clientY: 400 });
+    // Pointer 2 down at (550, 400) -> initial distance = 100, centroid = (500, 400) = stage center (0, 0)
+    sendPointer("pointerdown", { pointerId: 2, clientX: 550, clientY: 400 });
+
+    // Move pointers apart to distance = 200 (2x pinch zoom)
+    sendPointer("pointermove", { pointerId: 1, clientX: 400, clientY: 400 });
+    sendPointer("pointermove", { pointerId: 2, clientX: 600, clientY: 400 });
+    await tick();
+
+    // Scale should have doubled from fitScale (1.225 * 2 = 2.45)
+    expect(mediaFrame.style.transform).toContain("scale(2.45)");
+
+    // Lift fingers
+    sendPointer("pointerup", { pointerId: 1, clientX: 400, clientY: 400 });
+    sendPointer("pointerup", { pointerId: 2, clientX: 600, clientY: 400 });
+    await tick();
+
+    expect(mediaFrame.style.transform).toContain("scale(2.45)");
   });
 
 });

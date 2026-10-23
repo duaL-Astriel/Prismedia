@@ -17,6 +17,14 @@
     isLightboxVideoCapable,
     type UniversalLightboxEntity,
   } from "./universal-lightbox-media";
+  import {
+    calculateClampBounds,
+    calculateFocalZoom,
+    clampTranslation,
+    clientToStage,
+    createLightboxGestureHandler,
+    isZoomedBeyondFit,
+  } from "./universal-lightbox-zoom";
 
   interface Props {
     entities: UniversalLightboxEntity[];
@@ -71,9 +79,9 @@
   let imageSourceIndex = $state(0);
   let imageSourcesExhausted = $state(false);
   let stripThumbEls: Array<HTMLButtonElement | undefined> = $state([]);
-  let pointerStart: { x: number; y: number; t: number } | null = null;
   let panning = $state(false);
-  let lastTapAt = 0;
+  let isAnimating = $state(false);
+  let transitionTimeout: ReturnType<typeof setTimeout> | null = null;
   let activeMediaKey: string | null = null;
   let activeEntityId: string | null = null;
   const pendingImageWarmers = new Map<string, HTMLImageElement>();
@@ -161,6 +169,12 @@
     translateY = 0;
     scale = 1;
     fitScale = 1;
+    gestureHandler.reset();
+    isAnimating = false;
+    if (transitionTimeout) {
+      clearTimeout(transitionTimeout);
+      transitionTimeout = null;
+    }
     videoMuted = true;
     videoReady = false;
     videoIntrinsicW = 0;
@@ -198,23 +212,30 @@
     index = (index + 1) % entities.length;
   }
 
-  function resetTransform() {
+  function animateTransform(durationMs = 240) {
+    isAnimating = true;
+    if (transitionTimeout) clearTimeout(transitionTimeout);
+    transitionTimeout = setTimeout(() => {
+      isAnimating = false;
+      transitionTimeout = null;
+    }, durationMs);
+  }
+
+  function resetTransform(animated = true) {
     scale = fitScale || 1;
     translateX = 0;
     translateY = 0;
+    if (animated) animateTransform();
   }
 
-  function clampTranslate() {
+  function clampTranslate(allowMargin = false) {
     if (!stageEl || !naturalW || !naturalH) return;
     const rect = stageEl.getBoundingClientRect();
-    const dispW = naturalW * scale;
-    const dispH = naturalH * scale;
-    const maxX = Math.max(0, (dispW - rect.width) / 2);
-    const maxY = Math.max(0, (dispH - rect.height) / 2);
-    const marginX = Math.max(40, rect.width * 0.1);
-    const marginY = Math.max(40, rect.height * 0.1);
-    translateX = Math.min(maxX + marginX, Math.max(-(maxX + marginX), translateX));
-    translateY = Math.min(maxY + marginY, Math.max(-(maxY + marginY), translateY));
+    const margin = allowMargin ? Math.max(40, Math.min(rect.width, rect.height) * 0.1) : 0;
+    const bounds = calculateClampBounds(rect, { width: naturalW, height: naturalH }, scale, { margin });
+    const clamped = clampTranslation({ x: translateX, y: translateY }, bounds);
+    translateX = clamped.x;
+    translateY = clamped.y;
   }
 
   function applyFit() {
@@ -312,129 +333,64 @@
     videoMuted = (event.currentTarget as HTMLVideoElement).muted;
   }
 
-  function zoomBy(delta: number, centerX?: number, centerY?: number) {
+  const gestureHandler = createLightboxGestureHandler({
+    getState: () => ({
+      scale,
+      translateX,
+      translateY,
+      fitScale,
+      stageRect: stageEl ? stageEl.getBoundingClientRect() : null,
+      naturalW,
+      naturalH,
+      isVideo: isCurrentVideo,
+    }),
+    setTransform: (next, options) => {
+      scale = next.scale;
+      translateX = next.translateX;
+      translateY = next.translateY;
+      if (options?.animated) animateTransform();
+      else isAnimating = false;
+    },
+    setPanning: (next) => {
+      panning = next;
+    },
+    onNavigate: (action) => {
+      if (action === "next") goNext();
+      else goPrev();
+    },
+    onDismiss: () => {
+      onClose();
+    },
+    suppressClick: () => {
+      suppressStageClick = true;
+    },
+    doubleTapMs: DOUBLE_TAP_MS,
+    minScale: MIN_SCALE,
+    maxScale: MAX_SCALE,
+  });
+
+  function zoomBy(delta: number, centerX?: number, centerY?: number, animated = true) {
     const old = scale;
     let next = old * (1 + delta);
     next = Math.min(MAX_SCALE, Math.max(MIN_SCALE * fitScale, next));
     if (next === old) return;
     if (centerX != null && centerY != null && stageEl) {
       const rect = stageEl.getBoundingClientRect();
-      const cx = centerX - rect.left - rect.width / 2;
-      const cy = centerY - rect.top - rect.height / 2;
-      translateX = cx - ((cx - translateX) * next) / old;
-      translateY = cy - ((cy - translateY) * next) / old;
+      const focal = clientToStage({ x: centerX, y: centerY }, rect);
+      const updated = calculateFocalZoom({ scale: old, translateX, translateY }, next, focal);
+      translateX = updated.translateX;
+      translateY = updated.translateY;
     }
     scale = next;
-    clampTranslate();
+    clampTranslate(false);
+    if (animated) animateTransform();
   }
 
   function handleWheel(event: WheelEvent) {
     if (isCurrentVideo) return;
     event.preventDefault();
-    zoomBy(event.deltaY < 0 ? 0.12 : -0.12, event.clientX, event.clientY);
-  }
-
-  function handlePointerDown(event: PointerEvent) {
-    suppressStageClick = false;
-    if (isCurrentVideo) {
-      // Track touch gestures so a horizontal swipe navigates (or a downward
-      // swipe dismisses) even over a video. Mouse and the timeline scrubber
-      // (which stops propagation) keep their normal behaviour: a plain tap
-      // still toggles play because we never capture the pointer here.
-      pointerStart =
-        event.pointerType === "mouse" ? null : { x: event.clientX, y: event.clientY, t: Date.now() };
-      panning = false;
-      return;
-    }
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-    pointerStart = { x: event.clientX, y: event.clientY, t: Date.now() };
-    panning = scale > fitScale + 0.02;
-  }
-
-  function handlePointerMove(event: PointerEvent) {
-    if (!pointerStart || !panning) return;
-    translateX += event.movementX;
-    translateY += event.movementY;
-    clampTranslate();
-  }
-
-  function handlePointerUp(event: PointerEvent) {
-    if (isCurrentVideo) {
-      const start = pointerStart;
-      pointerStart = null;
-      panning = false;
-      if (!start) return;
-
-      const dx = event.clientX - start.x;
-      const dy = event.clientY - start.y;
-      const elapsed = Date.now() - start.t;
-      const absX = Math.abs(dx);
-      const absY = Math.abs(dy);
-      if (elapsed < 700 && Math.max(absX, absY) > 60) {
-        if (absX > absY * 1.3) {
-          if (dx < 0) goNext();
-          else goPrev();
-          // Swallow the trailing click so it doesn't toggle play on the
-          // outgoing video.
-          suppressStageClick = true;
-          return;
-        }
-        if (absY > absX * 1.3 && dy > 0) {
-          onClose();
-          suppressStageClick = true;
-          return;
-        }
-      }
-      return;
-    }
-
-    const start = pointerStart;
-    pointerStart = null;
-    if (!start) return;
-
-    const dx = event.clientX - start.x;
-    const dy = event.clientY - start.y;
-    const elapsed = Date.now() - start.t;
-    const absX = Math.abs(dx);
-    const absY = Math.abs(dy);
-    const moved = Math.hypot(dx, dy) > 6;
-    const target = event.target as HTMLElement;
-
-    if (!panning && !moved && event.pointerType === "mouse" && !target.closest("[data-lightbox-media]")) {
-      onClose();
-      return;
-    }
-
-    if (panning) {
-      panning = false;
-      return;
-    }
-
-    if (scale <= fitScale + 0.02 && event.pointerType !== "mouse") {
-      if (elapsed < 700 && Math.max(absX, absY) > 60) {
-        if (absX > absY * 1.3) {
-          if (dx < 0) goNext();
-          else goPrev();
-          return;
-        }
-        if (absY > absX * 1.3 && dy > 0) {
-          onClose();
-          return;
-        }
-      }
-    }
-
-    if (!moved && event.pointerType !== "mouse" && !isCurrentVideo) {
-      const now = Date.now();
-      if (now - lastTapAt < DOUBLE_TAP_MS) {
-        lastTapAt = 0;
-        if (scale > fitScale + 0.02) resetTransform();
-        else scale = fitScale * 2.5;
-        return;
-      }
-      lastTapAt = now;
-    }
+    isAnimating = false;
+    zoomBy(event.deltaY < 0 ? 0.12 : -0.12, event.clientX, event.clientY, false);
   }
 
   function handleStageClickCapture(event: MouseEvent) {
@@ -442,12 +398,6 @@
     suppressStageClick = false;
     event.preventDefault();
     event.stopPropagation();
-  }
-
-  function handleDoubleClick(event: MouseEvent) {
-    if (isCurrentVideo) return;
-    if (scale > fitScale + 0.02) resetTransform();
-    else zoomBy(1.5, event.clientX, event.clientY);
   }
 
   function handleRate(value: number) {
@@ -502,6 +452,7 @@
     return () => {
       window.removeEventListener("keydown", onKey);
       observer.disconnect();
+      if (transitionTimeout) clearTimeout(transitionTimeout);
     };
   });
 
@@ -549,19 +500,20 @@
         bind:this={stageEl}
         class="stage"
         onwheel={handleWheel}
-        onpointerdown={handlePointerDown}
-        onpointermove={handlePointerMove}
-        onpointerup={handlePointerUp}
-        onpointercancel={handlePointerUp}
+        onpointerdown={(e) => gestureHandler.onPointerDown(e)}
+        onpointermove={(e) => gestureHandler.onPointerMove(e)}
+        onpointerup={(e) => gestureHandler.onPointerUp(e)}
+        onpointercancel={(e) => gestureHandler.onPointerUp(e)}
         onclickcapture={handleStageClickCapture}
-        ondblclick={handleDoubleClick}
-        style:cursor={!isCurrentVideo && scale > fitScale + 0.02 ? (panning ? "grabbing" : "grab") : "default"}
+        ondblclick={(e) => gestureHandler.onDoubleClick(e)}
+        style:cursor={!isCurrentVideo && isZoomedBeyondFit(scale, fitScale) ? (panning ? "grabbing" : "grab") : "default"}
       >
         {#if current}
           <div
             class="media-frame"
             data-lightbox-media
             style:transform={isCurrentVideo ? undefined : `translate(${translateX}px, ${translateY}px) scale(${scale})`}
+            style:transition={!isCurrentVideo && isAnimating ? "transform 240ms cubic-bezier(0.16, 1, 0.3, 1)" : "none"}
             style:opacity={ready ? 1 : 0}
           >
             <NsfwBlur isNsfw={current.isNsfw === true} class="lightbox-media-guard">
