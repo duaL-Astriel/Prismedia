@@ -690,7 +690,8 @@ public sealed partial class EfEntityReadService : IEntityReadService {
             ? null
             : await _externalLibraryProvenance.ReadAsync(id, cancellationToken);
         var projected = SanitizeLocalAssets(
-            await EnrichBorrowedParentCoverAsync(
+            await EnrichFallbackCoverAsync(
+                await EnrichBorrowedParentCoverAsync(
                 EntityCardProjector.ToCard(
                     entity,
                     fileManagementState,
@@ -701,7 +702,10 @@ public sealed partial class EfEntityReadService : IEntityReadService {
                     externalLibraryProvenance),
                 hideNsfw,
                 enforceLibraryVisibility,
-                cancellationToken));
+                cancellationToken),
+            hideNsfw,
+            enforceLibraryVisibility,
+            cancellationToken));
         var detailGroups = await ProjectDetailGroupsAsync(
             id,
             hideNsfw,
@@ -1073,6 +1077,104 @@ public sealed partial class EfEntityReadService : IEntityReadService {
         return card with {
             Capabilities = WithImageCoverFallback(card.Capabilities, parentCover)
         };
+    }
+
+    private async Task<EntityCard> EnrichFallbackCoverAsync(
+        EntityCard card,
+        bool hideNsfw,
+        bool enforceLibraryVisibility,
+        CancellationToken cancellationToken) {
+        var images = card.Capabilities.OfType<ImagesCapability>().FirstOrDefault();
+        if (images?.CoverUrl is not null || images?.ThumbnailUrl is not null) {
+            return card;
+        }
+
+        if (card.Kind == EntityKind.Gallery) {
+            var detail = await _db.GalleryDetails.AsNoTracking()
+                .FirstOrDefaultAsync(d => d.EntityId == card.Id, cancellationToken);
+            var targetImageId = detail?.CoverImageEntityId;
+            if (targetImageId is null) {
+                var childQuery = _db.Entities.AsNoTracking()
+                    .Where(e => e.ParentEntityId == card.Id);
+                if (enforceLibraryVisibility) {
+                    childQuery = ApplyEnabledLibraryVisibility(childQuery);
+                }
+                childQuery = ApplyNsfwVisibility(childQuery, hideNsfw);
+                targetImageId = await childQuery
+                    .OrderBy(e => e.SortOrder)
+                    .ThenBy(e => e.Title)
+                    .ThenBy(e => e.Id)
+                    .Select(e => (Guid?)e.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+
+            if (targetImageId is { } childId) {
+                var covers = await LoadCoverPathsAsync([childId], cancellationToken);
+                if (covers.TryGetValue(childId, out var coverUrl)) {
+                    return card with {
+                        Capabilities = WithImageCoverFallback(card.Capabilities, coverUrl)
+                    };
+                }
+                var sourcePath = await _db.EntityFiles.AsNoTracking()
+                    .Where(f => f.EntityId == childId && f.Role == EntityFileRole.Source)
+                    .Select(f => f.Path)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (sourcePath is not null) {
+                    return card with {
+                        Capabilities = WithImageCoverFallback(card.Capabilities, sourcePath)
+                    };
+                }
+            }
+        } else if (card.Kind is EntityKind.Person or EntityKind.Tag or EntityKind.Studio) {
+            var mediaKindCodes = EntityKindRegistry.All
+                .Where(def => def.Category == EntityKindCategory.Media)
+                .Select(def => def.Code)
+                .ToHashSet();
+
+            var links = await _db.EntityRelationshipLinks.AsNoTracking()
+                .Where(link => link.TargetEntityId == card.Id || link.EntityId == card.Id)
+                .OrderBy(link => link.SortOrder)
+                .ThenBy(link => link.EntityId)
+                .ToArrayAsync(cancellationToken);
+
+            var candidateMediaIds = links
+                .Select(link => link.TargetEntityId == card.Id ? link.EntityId : link.TargetEntityId)
+                .Distinct()
+                .ToArray();
+
+            if (candidateMediaIds.Length > 0) {
+                var mediaEntitiesQuery = _db.Entities.AsNoTracking()
+                    .Where(e => candidateMediaIds.Contains(e.Id) && mediaKindCodes.Contains(e.KindCode));
+                if (enforceLibraryVisibility) {
+                    mediaEntitiesQuery = ApplyEnabledLibraryVisibility(mediaEntitiesQuery);
+                }
+                mediaEntitiesQuery = ApplyNsfwVisibility(mediaEntitiesQuery, hideNsfw);
+                var validMediaIds = await mediaEntitiesQuery
+                    .Select(e => e.Id)
+                    .ToHashSetAsync(cancellationToken);
+
+                var chosenMediaId = candidateMediaIds.FirstOrDefault(id => validMediaIds.Contains(id));
+                if (chosenMediaId != Guid.Empty) {
+                    var covers = await LoadCoverPathsAsync([chosenMediaId], cancellationToken);
+                    if (covers.TryGetValue(chosenMediaId, out var coverUrl)) {
+                        return card with {
+                            Capabilities = WithImageCoverFallback(card.Capabilities, coverUrl)
+                        };
+                    }
+                    var sourcePath = await _db.EntityFiles.AsNoTracking()
+                        .Where(f => f.EntityId == chosenMediaId && f.Role == EntityFileRole.Source)
+                        .Select(f => f.Path)
+                        .FirstOrDefaultAsync(cancellationToken);
+                    if (sourcePath is not null) {
+                        return card with {
+                            Capabilities = WithImageCoverFallback(card.Capabilities, sourcePath)
+                        };
+                    }
+                }
+            }
+        }
+
+        return card;
     }
 
     private static IReadOnlyList<EntityCapability> WithImageCoverFallback(
