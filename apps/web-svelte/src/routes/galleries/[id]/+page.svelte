@@ -374,7 +374,12 @@
     sharedKey={`gallery-${gallery?.id ?? "detail"}`}
   >
     {#snippet detailsContent(entity)}
-      <ImageLightboxDetails {entity} onRatingChange={updateLightboxCardRating} />
+      <ImageLightboxDetails
+        {entity}
+        galleryId={gallery?.id}
+        onCoverChange={() => void detail.reload()}
+        onRatingChange={updateLightboxCardRating}
+      />
     {/snippet}
   </UniversalLightbox>
 {/if}

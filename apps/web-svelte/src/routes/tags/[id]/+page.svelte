@@ -1,10 +1,12 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { Film } from "@lucide/svelte";
+  import { CheckCircle, Film, Image as ImageIcon } from "@lucide/svelte";
+  import { Button } from "@prismedia/ui-svelte";
   import EntityDetailPageState from "$lib/components/entities/EntityDetailPageState.svelte";
   import EntityGridSection from "$lib/components/entities/EntityGridSection.svelte";
   import { useEntityDetailPage } from "$lib/components/entities/entity-detail-page-controller.svelte";
   import { fetchEntities, fetchEntity, type EntityCardFull } from "$lib/api/entities";
+  import { setEntityCover } from "$lib/api/entity-mutations";
   import { RELATIONSHIP_CODE } from "$lib/api/generated/codes";
   import { getTagPolicyCapability } from "$lib/api/capabilities";
   import { entityCardToDetailCard, REFERENCE_STANDALONE_METADATA_SECTION_IDS, type EntityDetailCardFull } from "$lib/entities/entity-detail";
@@ -14,6 +16,22 @@
   import EntityDetail from "$lib/components/entities/EntityDetail.svelte";
   import EntityGrid from "$lib/components/entities/EntityGrid.svelte";
   let relatedCards = $state<EntityThumbnailCard[]>([]);
+  let settingCoverEntityId = $state<string | null>(null);
+  let settingCoverSuccessId = $state<string | null>(null);
+
+  async function handleSetCover(itemEntityId: string) {
+    if (!tag || settingCoverEntityId) return;
+    settingCoverEntityId = itemEntityId;
+    try {
+      await setEntityCover(tag.id, itemEntityId);
+      settingCoverSuccessId = itemEntityId;
+      await detail.reload();
+    } catch (err) {
+      console.error("Failed to set tag cover:", err);
+    } finally {
+      settingCoverEntityId = null;
+    }
+  }
 
   const detail = useEntityDetailPage<EntityCardFull>({
     loadKey: () => page.params.id ?? "",
@@ -96,7 +114,31 @@
             prefsKey={`tag-${tag.id}-content`}
             emptyTitle="No content"
             emptyMessage="No content tagged with this tag."
-          />
+          >
+            {#snippet cardAction(card)}
+              <Button
+                variant="outline"
+                size="xs"
+                type="button"
+                disabled={settingCoverEntityId === card.entity.id}
+                title={`Set as cover for ${tag.title}`}
+                aria-label={`Set as cover for ${tag.title}`}
+                onclick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void handleSetCover(card.entity.id);
+                }}
+              >
+                {#if settingCoverSuccessId === card.entity.id}
+                  <CheckCircle class="h-3 w-3" />
+                  <span>Cover set</span>
+                {:else}
+                  <ImageIcon class="h-3 w-3" />
+                  <span>Set as cover for {tag.title}</span>
+                {/if}
+              </Button>
+            {/snippet}
+          </EntityGrid>
         </EntityGridSection>
       {/if}
     {/if}

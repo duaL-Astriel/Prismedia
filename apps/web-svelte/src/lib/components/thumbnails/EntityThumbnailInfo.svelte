@@ -14,11 +14,12 @@
     showWantedBadge: boolean;
     showBadges?: boolean;
     subtitleContent?: Snippet<[EntityThumbnailCard]>;
+    cardAction?: Snippet<[EntityThumbnailCard]>;
     titleAlign: "left" | "center" | "right";
     titleSize: "default" | "compact";
   }
 
-  let { card, mediaOnly, layout, showBadges = true, showWantedBadge, subtitleContent, titleAlign, titleSize }: Props = $props();
+  let { card, mediaOnly, layout, showBadges = true, showWantedBadge, subtitleContent, cardAction, titleAlign, titleSize }: Props = $props();
   // Captions are a compact summary: two chips share one row, truncating long labels.
   const maxMetadataChips = 2;
 </script>
@@ -42,6 +43,12 @@
     </div>
 
     {#if showBadges && layout === "list"}<EntityThumbnailBadges {card} {showWantedBadge} inline />{/if}
+
+    {#if cardAction}
+      <div class="card-action">
+        {@render cardAction(card)}
+      </div>
+    {/if}
 
     {#if card.meta?.length}
       <div class="chips flex-nowrap">
@@ -114,6 +121,13 @@
   .custom-subtitle.title-align-left { justify-content: flex-start; }
   .custom-subtitle.title-align-center { justify-content: center; }
   .custom-subtitle.title-align-right { justify-content: flex-end; }
+
+  .card-action {
+    pointer-events: auto;
+    margin-top: var(--spacing-control-gap-sm, 0.25rem);
+    display: flex;
+    align-items: center;
+  }
 
   .chips {
     display: flex;

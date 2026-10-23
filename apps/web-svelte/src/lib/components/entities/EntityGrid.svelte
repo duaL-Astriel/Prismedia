@@ -1,6 +1,6 @@
 <script lang="ts">
   import { browser } from "$app/environment";
-  import { onMount } from "svelte";
+  import { onMount, type Snippet } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
   import { isNsfw, isWanted, withFlagCapability } from "$lib/api/capabilities";
   import { removeWantedEntities } from "$lib/api/requests";
@@ -56,6 +56,7 @@
      */
     bulkLibraryActions?: boolean;
     cards: EntityThumbnailCard[];
+    cardAction?: Snippet<[EntityThumbnailCard]>;
     emptyMessage?: string;
     emptyTitle?: string;
     /**
@@ -117,6 +118,7 @@
     bulkActions = [],
     bulkLibraryActions = true,
     cards,
+    cardAction,
     emptyMessage = "Try adjusting your search or filters.",
     emptyTitle = "Nothing present",
     entityKind,
@@ -710,6 +712,7 @@
     onwheel={viewport.markScrolling}
   >
     <EntityGridContent
+      {cardAction}
       {cardLinks}
       cards={pagedCards}
       {emptyMessage}

@@ -4,6 +4,7 @@
   import PrismediaLoadingMark from "$lib/components/PrismediaLoadingMark.svelte";
   import StatePlaceholder from "$lib/components/StatePlaceholder.svelte";
   import EntityThumbnail from "$lib/components/thumbnails/EntityThumbnail.svelte";
+  import type { Snippet } from "svelte";
   import type { EntityGridViewMode } from "$lib/entities/entity-grid";
   import type { EntityThumbnailCard } from "$lib/entities/entity-thumbnail";
 
@@ -24,11 +25,13 @@
     selectedIds: string[];
     selectionActive: boolean;
     viewMode: EntityGridViewMode;
+    cardAction?: Snippet<[EntityThumbnailCard]>;
   }
 
   let {
     cardLinks,
     cards,
+    cardAction,
     emptyMessage,
     emptyTitle,
     hasVisibleCards,
@@ -70,6 +73,7 @@
       <EntityThumbnail
         artworkReactive={false}
         {card}
+        {cardAction}
         imageFetchPriority="auto"
         imageLoading="lazy"
         layout={viewMode === "feed" ? "grid" : viewMode}

@@ -1,8 +1,9 @@
 <script lang="ts">
   import { Button } from "@prismedia/ui-svelte";
-  import { Users } from "@lucide/svelte";
+  import { CheckCircle, Image as ImageIcon, Users } from "@lucide/svelte";
   import { fetchEntity, type EntityCardFull } from "$lib/api/entities";
   import {
+    setEntityCover,
     updateEntityFlags,
     updateEntityMetadata,
     updateEntityRating,
@@ -16,6 +17,7 @@
   import { entityCardToDetailCard, type EntityDetailCardFull } from "$lib/entities/entity-detail";
   import { resolveEntityHref } from "$lib/entities/entity-routes";
   import EntityDetail, {
+    type EntityDetailActionButton,
     type EntityMetadataUpdateRequest,
   } from "$lib/components/entities/EntityDetail.svelte";
   import type { UniversalLightboxEntity } from "$lib/components/universal-lightbox-media";
@@ -24,16 +26,20 @@
 
   interface Props {
     entity: UniversalLightboxEntity;
+    galleryId?: string;
+    onCoverChange?: () => void;
     onRatingChange?: (entityId: string, value: number | null) => void;
   }
 
-  let { entity, onRatingChange }: Props = $props();
+  let { entity, galleryId, onCoverChange, onRatingChange }: Props = $props();
 
   let loadState: LoadState = $state("loading");
   let loadedEntityId: string | null = $state(null);
   let image = $state<EntityCardFull | null>(null);
   let errorMessage: string | null = $state(null);
   let ratingBusy = $state(false);
+  let coverSettingBusy = $state(false);
+  let coverSuccess = $state(false);
 
   const card = $derived.by((): EntityDetailCardFull | null => {
     if (!image) return null;
@@ -57,6 +63,7 @@
   async function loadImage(entityId: string) {
     loadState = "loading";
     errorMessage = null;
+    coverSuccess = false;
     try {
       const next = await fetchEntity(entityId);
       if (loadedEntityId !== entityId) return;
@@ -69,6 +76,37 @@
       loadState = "error";
     }
   }
+
+  async function handleSetGalleryCover() {
+    const targetId = galleryId ?? image?.parentEntityId;
+    if (!targetId || !image || coverSettingBusy) return;
+    coverSettingBusy = true;
+    coverSuccess = false;
+    try {
+      await setEntityCover(targetId, image.id);
+      coverSuccess = true;
+      onCoverChange?.();
+    } catch (err) {
+      errorMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      coverSettingBusy = false;
+    }
+  }
+
+  const actionButtons = $derived.by((): EntityDetailActionButton[] => {
+    const targetId = galleryId ?? image?.parentEntityId;
+    if (!targetId) return [];
+    return [
+      {
+        id: "set-gallery-cover",
+        label: coverSuccess ? "Gallery cover set" : "Set as gallery cover",
+        icon: coverSuccess ? CheckCircle : ImageIcon,
+        onClick: handleSetGalleryCover,
+        disabled: coverSettingBusy,
+        title: "Set this image as the gallery cover",
+      },
+    ];
+  });
 
   async function handleRatingChange(value: number | null) {
     if (!image || ratingBusy) return;
@@ -115,6 +153,7 @@
       onOrganizedToggle={handleOrganizedToggle}
       onMetadataSave={handleMetadataSave}
       {ratingBusy}
+      {actionButtons}
     >
       {#snippet heroMeta()}
         {#if studio}
