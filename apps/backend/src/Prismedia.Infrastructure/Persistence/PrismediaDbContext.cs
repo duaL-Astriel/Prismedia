@@ -105,6 +105,8 @@ public sealed class PrismediaDbContext : DbContext {
 
     public DbSet<TagDetailRow> TagDetails => Set<TagDetailRow>();
 
+    public DbSet<TagAliasRow> TagAliases => Set<TagAliasRow>();
+
     public DbSet<CollectionDetailRow> CollectionDetails => Set<CollectionDetailRow>();
 
     public DbSet<CollectionItemDetailRow> CollectionItemDetails => Set<CollectionItemDetailRow>();
