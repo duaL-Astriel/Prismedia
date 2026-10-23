@@ -539,6 +539,7 @@ public sealed partial class EntityMetadataApplyService : IEntityMetadataPatchSer
             cancellationToken);
         if (selected.Contains(MetadataPatchField.Title.ToCode())) {
             await ReplaceProviderAlternativeTitlesAsync(entity, proposal, now, cancellationToken);
+            await ReplaceTagAliasesAsync(entity, proposal, cancellationToken);
         }
 
         if (selected.Contains(MetadataPatchField.Urls.ToCode())) {

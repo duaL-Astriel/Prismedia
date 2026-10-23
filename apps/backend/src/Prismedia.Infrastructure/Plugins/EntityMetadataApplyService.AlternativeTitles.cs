@@ -45,4 +45,19 @@ public sealed partial class EntityMetadataApplyService {
             row.UpdatedAt = now;
         }
     }
+
+    private async Task ReplaceTagAliasesAsync(EntityRow entity, EntityMetadataProposal proposal, CancellationToken cancellationToken) {
+        if (entity.KindCode != EntityKind.Tag.ToCode()) return;
+        if (proposal.Patch.AlternativeTitles is not { Count: > 0 } alternatives) return;
+
+        var existing = await _db.TagAliases.Where(row => row.TagId == entity.Id).ToListAsync(cancellationToken);
+        var existingSet = new HashSet<string>(existing.Select(a => a.Alias), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var alias in alternatives.Where(a => !string.IsNullOrWhiteSpace(a)).Select(a => a.Trim())) {
+            if (alias.Equals(entity.Title, StringComparison.OrdinalIgnoreCase)) continue;
+            if (existingSet.Add(alias)) {
+                _db.TagAliases.Add(new TagAliasRow { TagId = entity.Id, Alias = alias });
+            }
+        }
+    }
 }

@@ -216,7 +216,10 @@ public sealed partial class EfEntityReadService : IEntityReadService {
 
         if (!string.IsNullOrWhiteSpace(query)) {
             var normalized = query.Trim().ToLower();
-            entityQuery = entityQuery.Where(entity => entity.Title.ToLower().Contains(normalized));
+            var tagKindCode = EntityKind.Tag.ToCode();
+            entityQuery = entityQuery.Where(entity =>
+                entity.Title.ToLower().Contains(normalized) ||
+                (entity.KindCode == tagKindCode && _db.TagAliases.Any(a => a.TagId == entity.Id && a.Alias.ToLower().Contains(normalized))));
         }
 
         if (referencedBy is { } targetEntityId) {

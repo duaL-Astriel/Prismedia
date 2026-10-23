@@ -150,7 +150,7 @@ public sealed partial class EntityMetadataApplyService {
 
         var order = 0;
         foreach (var name in tags.Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value.Trim()).Distinct(StringComparer.OrdinalIgnoreCase)) {
-            var tag = await FindEntityByTitleAsync(EntityKind.Tag.ToCode(), name, parentEntityId: null, cancellationToken)
+            var tag = await FindTagByNameOrAliasAsync(name, cancellationToken)
                 ?? CreateEntity(EntityKind.Tag.ToCode(), name, now);
             MarkNsfwIfRequested(tag, markNsfw, now);
             AddRelationship(entityId, RelationshipKind.Tags.ToCode(), "Tags", tag.Id, tag.KindCode, order++, null, now);

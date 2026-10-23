@@ -197,6 +197,13 @@ public static class StashResultMapper {
             ? Array.Empty<ImageCandidate>()
             : [new ImageCandidate(MediaImageKind.Thumbnail.ToCode(), tag.Image!.Trim(), providerName, null, null, null, null)];
 
+        var alternativeTitles = string.IsNullOrWhiteSpace(tag.Aliases)
+            ? []
+            : tag.Aliases.Split([',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(a => !string.Equals(a, name, StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
         var patch = new EntityMetadataPatch(
             string.IsNullOrWhiteSpace(name) ? null : name,
             string.IsNullOrWhiteSpace(tag.Description) ? null : tag.Description!.Trim(),
@@ -208,7 +215,9 @@ public static class StashResultMapper {
             new Dictionary<string, string>(),
             new Dictionary<string, int>(),
             new Dictionary<string, int>(),
-            null);
+            null) {
+            AlternativeTitles = alternativeTitles.Length > 0 ? alternativeTitles : null
+        };
 
         return new EntityMetadataProposal(
             $"{providerId}:tag:{(string.IsNullOrWhiteSpace(tag.Url) ? name : tag.Url!.Trim())}",
@@ -435,7 +444,7 @@ public static class StashResultMapper {
             externalIds[providerId] = tag.Url!.Trim();
         }
 
-        var confidence = string.IsNullOrWhiteSpace(queryTitle) ? (decimal?)null : TitleSimilarity.Score(tag.Name, queryTitle);
+        var confidence = ScoreTagSimilarity(tag, queryTitle);
         return new EntitySearchCandidate(
             externalIds,
             tag.Name.Trim(),
@@ -481,4 +490,18 @@ public static class StashResultMapper {
             .Select(tag => tag.Name)
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Select(name => name!.Trim());
+    private static decimal? ScoreTagSimilarity(StashScrapedTag tag, string? queryTitle) {
+        if (string.IsNullOrWhiteSpace(queryTitle)) return null;
+        var score = TitleSimilarity.Score(tag.Name ?? string.Empty, queryTitle);
+        if (score < 0.9m && !string.IsNullOrWhiteSpace(tag.Aliases)) {
+            var aliases = tag.Aliases.Split([',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (var alias in aliases) {
+                var aliasScore = TitleSimilarity.Score(alias, queryTitle);
+                if (aliasScore > score) {
+                    score = aliasScore;
+                }
+            }
+        }
+        return score;
+    }
 }
