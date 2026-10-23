@@ -5,11 +5,12 @@
     ChevronDown,
     ChevronLeft,
     Gauge,
+    Maximize,
     RotateCw,
     Sliders,
     Volume2,
   } from "@lucide/svelte";
-  import { Button, Popover, Separator, Slider, buttonVariants, cn } from "@prismedia/ui-svelte";
+  import { Button, Popover, Separator, Slider, Toggle, buttonVariants, cn } from "@prismedia/ui-svelte";
   import {
     subtitleDisplayStyles,
     type SubtitleAppearance,
@@ -31,6 +32,7 @@
     activeSubtitleId?: string | null;
     activeSubtitleLabel: string;
     appearance: SubtitleAppearance;
+    autoFullscreenOnLandscape?: boolean;
     open?: boolean;
     /** Native fullscreen containers are a separate browser top layer. */
     portalTarget?: HTMLElement | null;
@@ -39,6 +41,7 @@
     localAppearance: Partial<SubtitleAppearance> | null;
     onAppearanceChange: (appearance: SubtitleAppearance) => void;
     onAppearanceReset: () => void;
+    onAutoFullscreenChange?: (enabled: boolean) => void;
     onClose: () => void;
     onOpenView: (view: SettingsView) => void;
     onPlaybackRateChange: (rate: number) => void;
@@ -59,6 +62,7 @@
     activeSubtitleId = null,
     activeSubtitleLabel,
     appearance,
+    autoFullscreenOnLandscape = true,
     open = false,
     portalTarget,
     displayedAudioTrackLabel,
@@ -66,6 +70,7 @@
     localAppearance,
     onAppearanceChange,
     onAppearanceReset,
+    onAutoFullscreenChange,
     onClose,
     onOpenView,
     onPlaybackRateChange,
@@ -144,6 +149,18 @@
         <span class="min-w-0 truncate text-right text-xs text-muted-foreground">Custom</span>
         <ChevronDown class="h-3.5 w-3.5 -rotate-90" />
       </Button>
+    {/if}
+    {#if onAutoFullscreenChange}
+      <Separator class="my-1" />
+      <label class="grid h-auto min-h-10 w-full grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-2 text-left cursor-pointer hover:bg-accent/50 rounded-sm">
+        <Maximize class="h-4 w-4 text-muted-foreground" />
+        <span class="text-sm">Auto-fullscreen on landscape</span>
+        <Toggle
+          checked={autoFullscreenOnLandscape}
+          onchange={onAutoFullscreenChange}
+          ariaLabel="Auto-fullscreen on landscape"
+        />
+      </label>
     {/if}
   {:else if view === "quality"}
     {#each qualityOptions as option (String(option.value))}
