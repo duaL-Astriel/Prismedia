@@ -526,66 +526,6 @@ public sealed partial class EfEntityReadService {
         return result;
     }
 
-    private async Task<IReadOnlyDictionary<Guid, (string Path, Guid EntityId)>> ProjectTaxonomyArtworkAsync(
-        IReadOnlyList<EntityRow> taxonomyRows,
-        bool hideNsfw,
-        bool enforceLibraryVisibility,
-        CancellationToken cancellationToken) {
-        var taxonomyIds = taxonomyRows.Select(row => row.Id).ToArray();
-        var mediaKindCodes = EntityKindRegistry.All
-            .Where(def => def.Category == EntityKindCategory.Media)
-            .Select(def => def.Code)
-            .ToHashSet();
-
-        var links = await _db.EntityRelationshipLinks.AsNoTracking()
-            .Where(link => taxonomyIds.Contains(link.TargetEntityId) || taxonomyIds.Contains(link.EntityId))
-            .OrderBy(link => link.SortOrder)
-            .ThenBy(link => link.EntityId)
-            .ToArrayAsync(cancellationToken);
-
-        var linksByTaxonomy = taxonomyIds.ToDictionary(
-            id => id,
-            id => links
-                .Where(link => link.TargetEntityId == id || link.EntityId == id)
-                .Select(link => link.TargetEntityId == id ? link.EntityId : link.TargetEntityId)
-                .Distinct()
-                .ToArray());
-
-        var allMediaCandidateIds = linksByTaxonomy.Values.SelectMany(ids => ids).Distinct().ToArray();
-        if (allMediaCandidateIds.Length == 0) {
-            return new Dictionary<Guid, (string Path, Guid EntityId)>();
-        }
-
-        var mediaQuery = _db.Entities.AsNoTracking()
-            .Where(e => allMediaCandidateIds.Contains(e.Id) && mediaKindCodes.Contains(e.KindCode));
-        if (enforceLibraryVisibility) {
-            mediaQuery = ApplyEnabledLibraryVisibility(mediaQuery);
-        }
-        mediaQuery = ApplyNsfwVisibility(mediaQuery, hideNsfw);
-        var validMediaIds = await mediaQuery.Select(e => e.Id).ToHashSetAsync(cancellationToken);
-
-        var firstMediaByTaxonomy = new Dictionary<Guid, Guid>();
-        foreach (var pair in linksByTaxonomy) {
-            var firstMediaId = pair.Value.FirstOrDefault(id => validMediaIds.Contains(id));
-            if (firstMediaId != Guid.Empty) {
-                firstMediaByTaxonomy[pair.Key] = firstMediaId;
-            }
-        }
-
-        if (firstMediaByTaxonomy.Count == 0) {
-            return new Dictionary<Guid, (string Path, Guid EntityId)>();
-        }
-
-        var coversByMedia = await LoadCoverPathsAsync(firstMediaByTaxonomy.Values.Distinct().ToArray(), cancellationToken);
-        var result = new Dictionary<Guid, (string Path, Guid EntityId)>();
-        foreach (var (taxonomyId, mediaId) in firstMediaByTaxonomy) {
-            if (coversByMedia.TryGetValue(mediaId, out var path)) {
-                result[taxonomyId] = (path, mediaId);
-            }
-        }
-        return result;
-    }
-
     private async Task<IReadOnlyDictionary<Guid, CollectionArtwork>> ProjectCollectionArtworkAsync(
         IReadOnlyList<EntityRow> rows,
         bool hideNsfw,
