@@ -1,58 +1,52 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const mocks = vi.hoisted(() => ({
-  fetchApi: vi.fn(),
-}));
-
-vi.mock("$lib/api/orval-fetch", () => ({
-  fetchApi: mocks.fetchApi,
-}));
-
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { addTagAlias, removeTagAlias, mergeTag } from "$lib/api/taxonomy";
 
+function stubFetch(body: unknown) {
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  }));
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+function lastCall(fetchMock: ReturnType<typeof stubFetch>) {
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  return fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+}
+
 describe("taxonomy tag alias and merge API", () => {
-  beforeEach(() => {
-    mocks.fetchApi.mockReset();
-  });
+  afterEach(() => vi.unstubAllGlobals());
 
   it("calls POST /api/tags/{id}/aliases with alias payload", async () => {
-    mocks.fetchApi.mockResolvedValue({ id: "tag-1" });
+    const fetchMock = stubFetch({ id: "tag-1" });
     const result = await addTagAlias("tag-1", "alias-one");
 
-    expect(mocks.fetchApi).toHaveBeenCalledWith(
-      "/api/tags/tag-1/aliases",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ alias: "alias-one" }),
-      }),
-    );
-    expect(result).toEqual({ id: "tag-1" });
+    const [url, init] = lastCall(fetchMock);
+    expect(url).toBe("/api/tags/tag-1/aliases");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ alias: "alias-one" });
+    expect(result.id).toBe("tag-1");
   });
 
   it("calls DELETE /api/tags/{id}/aliases/{alias}", async () => {
-    mocks.fetchApi.mockResolvedValue({ id: "tag-1" });
+    const fetchMock = stubFetch({ id: "tag-1" });
     const result = await removeTagAlias("tag-1", "alias-one");
 
-    expect(mocks.fetchApi).toHaveBeenCalledWith(
-      "/api/tags/tag-1/aliases/alias-one",
-      expect.objectContaining({
-        method: "DELETE",
-      }),
-    );
-    expect(result).toEqual({ id: "tag-1" });
+    const [url, init] = lastCall(fetchMock);
+    expect(url).toBe("/api/tags/tag-1/aliases/alias-one");
+    expect(init.method).toBe("DELETE");
+    expect(result.id).toBe("tag-1");
   });
 
   it("calls POST /api/tags/{id}/merge with sourceTagId payload", async () => {
-    mocks.fetchApi.mockResolvedValue({ id: "canonical-tag" });
+    const fetchMock = stubFetch({ id: "canonical-tag" });
     const result = await mergeTag("canonical-tag", "source-tag");
 
-    expect(mocks.fetchApi).toHaveBeenCalledWith(
-      "/api/tags/canonical-tag/merge",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ sourceTagId: "source-tag" }),
-      }),
-    );
-    expect(result).toEqual({ id: "canonical-tag" });
+    const [url, init] = lastCall(fetchMock);
+    expect(url).toBe("/api/tags/canonical-tag/merge");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ sourceTagId: "source-tag" });
+    expect(result.id).toBe("canonical-tag");
   });
 });

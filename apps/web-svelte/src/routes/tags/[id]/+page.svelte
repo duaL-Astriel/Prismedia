@@ -78,15 +78,8 @@
     return entityCardToDetailCard(tag);
   });
 
-  interface ExtendedTagPolicy {
-    ignoreAutoTag?: boolean;
-    aliases?: string[];
-  }
-
   const tagPolicy = $derived(tag ? getTagPolicyCapability(tag.capabilities) : undefined);
-  const aliases = $derived(
-    ((tagPolicy as unknown as ExtendedTagPolicy)?.aliases ?? []).filter(Boolean),
-  );
+  const aliases = $derived((tagPolicy?.aliases ?? []).filter(Boolean));
 
   const heroActions = $derived.by((): EntityDetailActionButton[] => [
     {
