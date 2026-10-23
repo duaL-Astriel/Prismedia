@@ -7,6 +7,10 @@ import {
   resolveAudioArtist,
   resolveAudioArtwork,
 } from "./audio-playback.svelte";
+import {
+  resetVolumePreferenceForTesting,
+  writeVolumePreference,
+} from "$lib/player/volume-preference";
 
 function tracks(count: number): AudioTrackListItemDto[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -332,5 +336,43 @@ describe("AudioPlaybackStore", () => {
     expect(store.volume).toBe(0.3);
     expect(store.muted).toBe(true);
     expect(store.collapsedSide).toBe(MUSIC_PLAYER_MINI_SIDE.right);
+  });
+
+  it("initializes volume and muted from the shared volume preference", () => {
+    resetVolumePreferenceForTesting();
+    writeVolumePreference({ volume: 0.45, muted: true });
+
+    const store = new AudioPlaybackStore();
+    expect(store.volume).toBe(0.45);
+    expect(store.muted).toBe(true);
+
+    resetVolumePreferenceForTesting();
+    window.localStorage?.clear();
+  });
+
+  it("restores volume preference from client storage over server state when present", () => {
+    resetVolumePreferenceForTesting();
+    writeVolumePreference({ volume: 0.6, muted: false });
+
+    const store = new AudioPlaybackStore();
+    store.restore({
+      queue: tracks(2),
+      order: [0, 1],
+      position: 0,
+      currentTime: 10,
+      playing: false,
+      shuffle: false,
+      repeat: MUSIC_PLAYER_REPEAT_MODE.off,
+      volume: 1.0,
+      muted: true,
+      collapsed: false,
+      collapsedSide: MUSIC_PLAYER_MINI_SIDE.left,
+    });
+
+    expect(store.volume).toBe(0.6);
+    expect(store.muted).toBe(false);
+
+    resetVolumePreferenceForTesting();
+    window.localStorage?.clear();
   });
 });

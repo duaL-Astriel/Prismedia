@@ -213,6 +213,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- Video and audio playback volume and muted states are remembered in client storage across media changes, page reloads, and player transitions instead of resetting to 100%.
+
 - Installed plugins and Stash community scrapers remain available and discoverable when run from a relocated workspace or container whose recorded file paths point to a different absolute path.
 
 - Candidate review in Identify now displays search input fields and enables manual query refinement when an entity relies on a fallback kind, such as identifying a movie with a generic video provider.
