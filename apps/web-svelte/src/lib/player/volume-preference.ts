@@ -196,6 +196,28 @@ export function resolveUnmutedVolume(currentVolume?: number): number {
 }
 
 /**
+ * Whether playback should look muted: explicitly muted, or volume at 0.
+ * Mute and volume are stored separately; this only drives the UI affordance.
+ */
+export function isEffectivelyMuted(muted: boolean, volume: number): boolean {
+  return muted || volume === 0;
+}
+
+/**
+ * Computes the state after pressing the mute button. Pressing while effectively
+ * muted (including volume 0) unmutes and restores the last non-zero volume.
+ */
+export function resolveMuteToggle(
+  muted: boolean,
+  volume: number,
+): { muted: boolean; volume: number } {
+  if (isEffectivelyMuted(muted, volume)) {
+    return { muted: false, volume: resolveUnmutedVolume(volume) };
+  }
+  return { muted: true, volume };
+}
+
+/**
  * Returns the currently tracked last non-zero volume level.
  */
 export function getLastNonZeroVolume(): number {

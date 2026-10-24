@@ -5,10 +5,12 @@ import {
   DEFAULT_VOLUME,
   getLastNonZeroVolume,
   hasStoredVolumePreference,
+  isEffectivelyMuted,
   MUTED_STORAGE_KEY,
   onVolumePreferenceChange,
   readVolumePreference,
   resetVolumePreferenceForTesting,
+  resolveMuteToggle,
   resolveUnmutedVolume,
   setLastNonZeroVolume,
   VOLUME_STORAGE_KEY,
@@ -204,5 +206,33 @@ describe("volume-preference", () => {
       expect(() => writeMuted(true)).not.toThrow();
       expect(() => writeVolumePreference({ volume: 0.2, muted: false })).not.toThrow();
     });
+  });
+});
+
+describe("mute display semantics", () => {
+  beforeEach(() => {
+    resetVolumePreferenceForTesting();
+  });
+
+  it("looks muted when explicitly muted", () => {
+    expect(isEffectivelyMuted(true, 0.8)).toBe(true);
+  });
+
+  it("looks muted at volume 0 even when not muted", () => {
+    expect(isEffectivelyMuted(false, 0)).toBe(true);
+  });
+
+  it("looks unmuted with positive volume", () => {
+    expect(isEffectivelyMuted(false, 0.4)).toBe(false);
+  });
+
+  it("unmute at volume 0 restores the last non-zero volume", () => {
+    writeVolume(0.6);
+    writeVolume(0);
+    expect(resolveMuteToggle(false, 0)).toEqual({ muted: false, volume: 0.6 });
+  });
+
+  it("mutes when audible and keeps the volume", () => {
+    expect(resolveMuteToggle(false, 0.7)).toEqual({ muted: true, volume: 0.7 });
   });
 });

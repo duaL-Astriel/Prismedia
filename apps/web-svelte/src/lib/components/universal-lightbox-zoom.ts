@@ -319,34 +319,17 @@ export function resolveSwipeAction(params: SwipeDecisionParams): SwipeAction {
   const isZoomed = isZoomedBeyondFit(scale, fitScale);
 
   if (!isZoomed) {
-    if (isHorizontal) {
-      return deltaX < 0 ? "next" : "prev";
-    }
-    if (isVerticalDismiss) {
-      return "dismiss";
-    }
-    return "none";
+    return isHorizontal ? (deltaX < 0 ? "next" : "prev") : "dismiss";
   }
 
   // When zoomed beyond fit, only allow swipe at the pan boundary
   if (isHorizontal) {
-    if (deltaX < 0 && currentTranslate.x <= bounds.minX + boundaryTolerancePx) {
-      return "next";
-    }
-    if (deltaX > 0 && currentTranslate.x >= bounds.maxX - boundaryTolerancePx) {
-      return "prev";
-    }
+    if (deltaX < 0 && currentTranslate.x <= bounds.minX + boundaryTolerancePx) return "next";
+    if (deltaX > 0 && currentTranslate.x >= bounds.maxX - boundaryTolerancePx) return "prev";
     return "none";
   }
 
-  if (isVerticalDismiss) {
-    if (currentTranslate.y >= bounds.maxY - boundaryTolerancePx) {
-      return "dismiss";
-    }
-    return "none";
-  }
-
-  return "none";
+  return currentTranslate.y >= bounds.maxY - boundaryTolerancePx ? "dismiss" : "none";
 }
 
 /**
@@ -371,6 +354,38 @@ export function createLightboxGestureHandler(
   let lastTapAt = 0;
   let lastTapPos: Point = { x: 0, y: 0 };
 
+  const transformOf = (state: LightboxGestureState): TransformState => ({
+    scale: state.scale,
+    translateX: state.translateX,
+    translateY: state.translateY,
+  });
+
+  const boundsFor = (state: LightboxGestureState, rect: ViewportRect, scale: number, margin?: number) =>
+    calculateClampBounds(rect, { width: state.naturalW, height: state.naturalH }, scale, { margin });
+
+  const panMargin = (rect: ViewportRect) => Math.max(40, Math.min(rect.width, rect.height) * 0.1);
+
+  /** Clamps `next` into the media bounds at its own scale and commits it. */
+  function commitClamped(
+    state: LightboxGestureState,
+    rect: ViewportRect,
+    next: TransformState,
+    animated: boolean,
+    margin?: number,
+  ) {
+    const clamped = clampTranslation(
+      { x: next.translateX, y: next.translateY },
+      boundsFor(state, rect, next.scale, margin),
+    );
+    options.setTransform({ scale: next.scale, translateX: clamped.x, translateY: clamped.y }, { animated });
+  }
+
+  function zoomAtClientPoint(state: LightboxGestureState, rect: ViewportRect, clientX: number, clientY: number) {
+    const tapPoint = clientToStage({ x: clientX, y: clientY }, rect);
+    const next = calculateDoubleTapZoom(transformOf(state), state.fitScale, tapPoint, { maxScale });
+    commitClamped(state, rect, next, true);
+  }
+
   function onPointerDown(event: PointerEvent) {
     const state = options.getState();
     if (state.isVideo) {
@@ -386,7 +401,7 @@ export function createLightboxGestureHandler(
       } catch {}
     }
 
-    const pointerId = event.pointerId ?? (event as unknown as { pointerId?: number }).pointerId ?? 0;
+    const pointerId = event.pointerId ?? 0;
     activePointers.set(pointerId, { x: event.clientX, y: event.clientY });
 
     if (activePointers.size === 1) {
@@ -398,12 +413,10 @@ export function createLightboxGestureHandler(
     } else if (activePointers.size === 2) {
       const [p1, p2] = Array.from(activePointers.values());
       pinchStartDist = getDistance(p1, p2);
-      if (state.stageRect) {
-        pinchStartCentroid = clientToStage(getCentroid(p1, p2), state.stageRect);
-      } else {
-        pinchStartCentroid = { x: 0, y: 0 };
-      }
-      pinchStartTransform = { scale: state.scale, translateX: state.translateX, translateY: state.translateY };
+      pinchStartCentroid = state.stageRect
+        ? clientToStage(getCentroid(p1, p2), state.stageRect)
+        : { x: 0, y: 0 };
+      pinchStartTransform = transformOf(state);
       isPinching = true;
       options.setPanning?.(false);
       pointerStart = null;
@@ -411,7 +424,7 @@ export function createLightboxGestureHandler(
   }
 
   function onPointerMove(event: PointerEvent) {
-    const pointerId = event.pointerId ?? (event as unknown as { pointerId?: number }).pointerId ?? 0;
+    const pointerId = event.pointerId ?? 0;
     if (!activePointers.has(pointerId)) return;
     activePointers.set(pointerId, { x: event.clientX, y: event.clientY });
 
@@ -433,15 +446,7 @@ export function createLightboxGestureHandler(
         { minScale: minScale * state.fitScale, maxScale },
       );
 
-      const margin = Math.max(40, Math.min(state.stageRect.width, state.stageRect.height) * 0.1);
-      const bounds = calculateClampBounds(
-        state.stageRect,
-        { width: state.naturalW, height: state.naturalH },
-        next.scale,
-        { margin },
-      );
-      const clamped = clampTranslation({ x: next.translateX, y: next.translateY }, bounds);
-      options.setTransform({ scale: next.scale, translateX: clamped.x, translateY: clamped.y }, { animated: false });
+      commitClamped(state, state.stageRect, next, false, panMargin(state.stageRect));
       return;
     }
 
@@ -453,18 +458,13 @@ export function createLightboxGestureHandler(
         const deltaY = event.clientY - lastPointerPos.y;
         lastPointerPos = { x: event.clientX, y: event.clientY };
 
-        const margin = Math.max(40, Math.min(state.stageRect.width, state.stageRect.height) * 0.1);
-        const bounds = calculateClampBounds(
+        commitClamped(
+          state,
           state.stageRect,
-          { width: state.naturalW, height: state.naturalH },
-          state.scale,
-          { margin },
+          { scale: state.scale, translateX: state.translateX + deltaX, translateY: state.translateY + deltaY },
+          false,
+          panMargin(state.stageRect),
         );
-        const clamped = clampTranslation(
-          { x: state.translateX + deltaX, y: state.translateY + deltaY },
-          bounds,
-        );
-        options.setTransform({ scale: state.scale, translateX: clamped.x, translateY: clamped.y }, { animated: false });
       }
     }
   }
@@ -476,7 +476,7 @@ export function createLightboxGestureHandler(
       } catch {}
     }
 
-    const pointerId = event.pointerId ?? (event as unknown as { pointerId?: number }).pointerId ?? 0;
+    const pointerId = event.pointerId ?? 0;
     activePointers.delete(pointerId);
 
     const state = options.getState();
@@ -513,13 +513,7 @@ export function createLightboxGestureHandler(
         if (state.scale < state.fitScale) {
           options.setTransform({ scale: state.fitScale, translateX: 0, translateY: 0 }, { animated: true });
         } else if (state.stageRect) {
-          const bounds = calculateClampBounds(
-            state.stageRect,
-            { width: state.naturalW, height: state.naturalH },
-            state.scale,
-          );
-          const clamped = clampTranslation({ x: state.translateX, y: state.translateY }, bounds);
-          options.setTransform({ scale: state.scale, translateX: clamped.x, translateY: clamped.y }, { animated: true });
+          commitClamped(state, state.stageRect, transformOf(state), true);
         }
       } else if (activePointers.size === 1) {
         const remaining = activePointers.values().next().value;
@@ -537,15 +531,7 @@ export function createLightboxGestureHandler(
     const isZoomed = isZoomedBeyondFit(state.scale, state.fitScale);
 
     if (!start) {
-      if (isZoomed && state.stageRect) {
-        const bounds = calculateClampBounds(
-          state.stageRect,
-          { width: state.naturalW, height: state.naturalH },
-          state.scale,
-        );
-        const clamped = clampTranslation({ x: state.translateX, y: state.translateY }, bounds);
-        options.setTransform({ scale: state.scale, translateX: clamped.x, translateY: clamped.y }, { animated: true });
-      }
+      if (isZoomed && state.stageRect) commitClamped(state, state.stageRect, transformOf(state), true);
       return;
     }
 
@@ -561,7 +547,7 @@ export function createLightboxGestureHandler(
     }
 
     const bounds = state.stageRect
-      ? calculateClampBounds(state.stageRect, { width: state.naturalW, height: state.naturalH }, state.scale)
+      ? boundsFor(state, state.stageRect, state.scale)
       : { minX: 0, maxX: 0, minY: 0, maxY: 0 };
 
     const swipeAction = resolveSwipeAction({
@@ -584,30 +570,14 @@ export function createLightboxGestureHandler(
       return;
     }
 
-    if (isZoomed && state.stageRect) {
-      const clamped = clampTranslation({ x: state.translateX, y: state.translateY }, bounds);
-      options.setTransform({ scale: state.scale, translateX: clamped.x, translateY: clamped.y }, { animated: true });
-    }
+    if (isZoomed && state.stageRect) commitClamped(state, state.stageRect, transformOf(state), true);
 
     if (!moved && event.pointerType !== "mouse" && !state.isVideo && state.stageRect) {
       const now = Date.now();
       const tapDist = Math.hypot(event.clientX - lastTapPos.x, event.clientY - lastTapPos.y);
       if (now - lastTapAt < doubleTapMs && tapDist < 30) {
         lastTapAt = 0;
-        const tapPoint = clientToStage({ x: event.clientX, y: event.clientY }, state.stageRect);
-        const next = calculateDoubleTapZoom(
-          { scale: state.scale, translateX: state.translateX, translateY: state.translateY },
-          state.fitScale,
-          tapPoint,
-          { maxScale },
-        );
-        const newBounds = calculateClampBounds(
-          state.stageRect,
-          { width: state.naturalW, height: state.naturalH },
-          next.scale,
-        );
-        const clamped = clampTranslation({ x: next.translateX, y: next.translateY }, newBounds);
-        options.setTransform({ scale: next.scale, translateX: clamped.x, translateY: clamped.y }, { animated: true });
+        zoomAtClientPoint(state, state.stageRect, event.clientX, event.clientY);
         return;
       }
       lastTapAt = now;
@@ -618,20 +588,7 @@ export function createLightboxGestureHandler(
   function onDoubleClick(event: MouseEvent) {
     const state = options.getState();
     if (state.isVideo || !state.stageRect) return;
-    const tapPoint = clientToStage({ x: event.clientX, y: event.clientY }, state.stageRect);
-    const next = calculateDoubleTapZoom(
-      { scale: state.scale, translateX: state.translateX, translateY: state.translateY },
-      state.fitScale,
-      tapPoint,
-      { maxScale },
-    );
-    const newBounds = calculateClampBounds(
-      state.stageRect,
-      { width: state.naturalW, height: state.naturalH },
-      next.scale,
-    );
-    const clamped = clampTranslation({ x: next.translateX, y: next.translateY }, newBounds);
-    options.setTransform({ scale: next.scale, translateX: clamped.x, translateY: clamped.y }, { animated: true });
+    zoomAtClientPoint(state, state.stageRect, event.clientX, event.clientY);
   }
 
   function reset() {

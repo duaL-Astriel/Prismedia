@@ -25,7 +25,7 @@
     type AudioQueueEntry,
   } from "$lib/stores/audio-playback.svelte";
   import { audioEntryPosition } from "$lib/player/audio-chapters";
-  import { clampVolume, onVolumePreferenceChange, resolveUnmutedVolume, writeVolumePreference } from "$lib/player/volume-preference";
+  import { clampVolume, onVolumePreferenceChange, resolveMuteToggle, writeVolumePreference } from "$lib/player/volume-preference";
   import { useAppChrome } from "$lib/stores/app-chrome.svelte";
   import {
     AUDIO_PLAYBACK_DIAGNOSTIC_EVENT,
@@ -420,8 +420,7 @@
 
   function toggleMute() {
     if (!audioEl) return;
-    const nextMuted = !playback.muted;
-    const nextVolume = !nextMuted && playback.volume === 0 ? resolveUnmutedVolume(playback.volume) : playback.volume;
+    const { muted: nextMuted, volume: nextVolume } = resolveMuteToggle(playback.muted, playback.volume);
     audioEl.muted = playback.muted = nextMuted;
     audioEl.volume = playback.volume = nextVolume;
     writeVolumePreference({ volume: nextVolume, muted: nextMuted });

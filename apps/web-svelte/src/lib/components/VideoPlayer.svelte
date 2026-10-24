@@ -84,7 +84,8 @@
     clampVolume,
     onVolumePreferenceChange,
     readVolumePreference,
-    resolveUnmutedVolume,
+    isEffectivelyMuted,
+    resolveMuteToggle,
     writeVolumePreference,
   } from "$lib/player/volume-preference";
   import { resolveInitialVideoPlayerSourcePolicy } from "$lib/player/video-player-source-policy";
@@ -297,6 +298,7 @@
   // svelte-ignore state_referenced_locally
   let muted = $state(initialMuted ? true : initialVolumePref.muted);
   let volume = $state(initialVolumePref.volume);
+  const displayMuted = $derived(isEffectivelyMuted(muted, volume));
   let playbackRate = $state(1);
   let showControls = $state(true);
   let bufferAhead = $state(0);
@@ -882,11 +884,10 @@
     muteTouched = true;
     clearInitialMutedSync();
     const video = mediaElement();
-    const nextMuted = !(player?.muted || video?.muted || muted);
-    let nextVolume = volume;
-    if (!nextMuted && nextVolume === 0) {
-      nextVolume = resolveUnmutedVolume(nextVolume);
-    }
+    const { muted: nextMuted, volume: nextVolume } = resolveMuteToggle(
+      Boolean(player?.muted || video?.muted || muted),
+      volume,
+    );
     syncMutedState(nextMuted, nextVolume);
     writeVolumePreference({ volume: nextVolume, muted: nextMuted });
   }
@@ -1792,8 +1793,8 @@
             />
 
             <div class="hidden sm:flex items-center gap-2 text-white/80">
-              <Button variant="ghost" size="icon" type="button" onclick={toggleMute} class="transition-colors hover:text-white" aria-label={muted ? "Unmute" : "Mute"}>
-                {#if muted}<VolumeX class="h-4 w-4" />{:else}<Volume2 class="h-4 w-4" />{/if}
+              <Button variant="ghost" size="icon" type="button" onclick={toggleMute} class="transition-colors hover:text-white" aria-label={displayMuted ? "Unmute" : "Mute"} aria-pressed={displayMuted}>
+                {#if displayMuted}<VolumeX class="h-4 w-4" />{:else}<Volume2 class="h-4 w-4" />{/if}
               </Button>
               <Slider type="single" min={0} max={1} step={0.05} value={muted ? 0 : volume} onValueChange={handleVolumeChange} thumbLabel="Volume" class="w-20" />
             </div>
