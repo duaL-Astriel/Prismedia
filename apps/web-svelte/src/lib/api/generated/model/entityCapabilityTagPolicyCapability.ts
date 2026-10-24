@@ -9,4 +9,6 @@ import type { EntityCapabilityTagPolicyCapabilityKind } from './entityCapability
 export interface EntityCapabilityTagPolicyCapability {
   kind: EntityCapabilityTagPolicyCapabilityKind;
   ignoreAutoTag: boolean;
+  /** @nullable */
+  aliases?: string[] | null;
 }

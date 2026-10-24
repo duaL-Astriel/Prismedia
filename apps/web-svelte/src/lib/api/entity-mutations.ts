@@ -1,6 +1,7 @@
 import {
   createEntityMarker as createEntityMarkerRequest,
   deleteEntityMarker as deleteEntityMarkerRequest,
+  setEntityCover as setEntityCoverRequest,
   updateEntity as updateEntityRequest,
   updateEntityByKind,
   updateEntityFlags as updateEntityFlagsRequest,
@@ -109,14 +110,9 @@ export function setEntityCover(
   itemEntityId: string,
   options?: RequestOptions,
 ): Promise<EntityCard> {
-  return fetchApi<EntityCard>(`/entities/${encodeURIComponent(targetEntityId)}/cover`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ itemEntityId }),
-    signal: options?.signal,
-  });
+  return setEntityCoverRequest(targetEntityId, { itemEntityId }, requestInit(options)).then((response) =>
+    unwrapGenerated<EntityCard>(response, `Failed to set cover for ${targetEntityId}`),
+  );
 }
 
 export function clearEntityImageAsset(

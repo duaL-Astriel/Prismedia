@@ -1,14 +1,16 @@
 import {
+  addTagAlias as addTagAliasRequest,
   createPerson,
   createStudio,
   createTag,
   deletePerson,
   deleteStudio,
   deleteTag,
+  mergeTag as mergeTagRequest,
+  removeTagAlias as removeTagAliasRequest,
 } from "$lib/api/generated/prismedia";
 import type { EntityCard, EntityCreateRequest } from "$lib/api/generated/model";
 import { requestInit, unwrapGenerated, type RequestOptions } from "$lib/api/generated-response";
-import { fetchApi } from "$lib/api/orval-fetch";
 import {
   ENTITY_KIND,
   ENTITY_KINDS_SUPPORTING_MANUAL_MANAGEMENT,
@@ -64,11 +66,8 @@ export async function addTagAlias(
   alias: string,
   options?: RequestOptions,
 ): Promise<EntityCard> {
-  return fetchApi<EntityCard>(`/api/tags/${encodeURIComponent(tagId)}/aliases`, {
-    method: "POST",
-    body: JSON.stringify({ alias }),
-    ...requestInit(options),
-  });
+  const response = await addTagAliasRequest(tagId, { alias }, requestInit(options));
+  return unwrapGenerated<EntityCard>(response, "Failed to add tag alias");
 }
 
 /** Removes an alias from a tag. */
@@ -77,10 +76,8 @@ export async function removeTagAlias(
   alias: string,
   options?: RequestOptions,
 ): Promise<EntityCard> {
-  return fetchApi<EntityCard>(`/api/tags/${encodeURIComponent(tagId)}/aliases/${encodeURIComponent(alias)}`, {
-    method: "DELETE",
-    ...requestInit(options),
-  });
+  const response = await removeTagAliasRequest(tagId, alias, requestInit(options));
+  return unwrapGenerated<EntityCard>(response, "Failed to remove tag alias");
 }
 
 /** Merges a source tag into the canonical tag. */
@@ -89,9 +86,6 @@ export async function mergeTag(
   sourceTagId: string,
   options?: RequestOptions,
 ): Promise<EntityCard> {
-  return fetchApi<EntityCard>(`/api/tags/${encodeURIComponent(canonicalTagId)}/merge`, {
-    method: "POST",
-    body: JSON.stringify({ sourceTagId }),
-    ...requestInit(options),
-  });
+  const response = await mergeTagRequest(canonicalTagId, { sourceTagId }, requestInit(options));
+  return unwrapGenerated<EntityCard>(response, "Failed to merge tags");
 }
