@@ -1,4 +1,15 @@
 import "@testing-library/jest-dom/vitest";
+import { afterAll } from "vitest";
+
+// bits-ui restores the body style 24ms after the last scroll lock (an open Select, menu, or dialog)
+// is released. When a file's final test closes or unmounts one, that timer can outlive the file and
+// fire after JSDOM is torn down ("document is not defined"), failing an otherwise green run. Let
+// such deferred cleanups finish while the document still exists. The real timer is captured here so a
+// file that leaves fake timers installed cannot stall the wait.
+const realSetTimeout = globalThis.setTimeout;
+afterAll(async () => {
+  await new Promise((resolve) => realSetTimeout(resolve, 50));
+});
 
 // JSDOM does not implement scrolling layout. Shared menus scroll the highlighted
 // item into view through this native API; visual scrolling is checked in-browser.
