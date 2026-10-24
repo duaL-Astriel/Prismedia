@@ -216,7 +216,10 @@ public sealed partial class EfEntityReadService : IEntityReadService {
 
         if (!string.IsNullOrWhiteSpace(query)) {
             var normalized = query.Trim().ToLower();
-            entityQuery = entityQuery.Where(entity => entity.Title.ToLower().Contains(normalized));
+            var tagKindCode = EntityKind.Tag.ToCode();
+            entityQuery = entityQuery.Where(entity =>
+                entity.Title.ToLower().Contains(normalized) ||
+                (entity.KindCode == tagKindCode && _db.TagAliases.Any(a => a.TagId == entity.Id && a.Alias.ToLower().Contains(normalized))));
         }
 
         if (referencedBy is { } targetEntityId) {
@@ -690,7 +693,8 @@ public sealed partial class EfEntityReadService : IEntityReadService {
             ? null
             : await _externalLibraryProvenance.ReadAsync(id, cancellationToken);
         var projected = SanitizeLocalAssets(
-            await EnrichBorrowedParentCoverAsync(
+            await EnrichFallbackCoverAsync(
+                await EnrichBorrowedParentCoverAsync(
                 EntityCardProjector.ToCard(
                     entity,
                     fileManagementState,
@@ -701,7 +705,10 @@ public sealed partial class EfEntityReadService : IEntityReadService {
                     externalLibraryProvenance),
                 hideNsfw,
                 enforceLibraryVisibility,
-                cancellationToken));
+                cancellationToken),
+            hideNsfw,
+            enforceLibraryVisibility,
+            cancellationToken));
         var detailGroups = await ProjectDetailGroupsAsync(
             id,
             hideNsfw,

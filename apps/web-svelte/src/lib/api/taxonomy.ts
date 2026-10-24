@@ -1,12 +1,15 @@
 import {
+  addTagAlias as addTagAliasRequest,
   createPerson,
   createStudio,
   createTag,
   deletePerson,
   deleteStudio,
   deleteTag,
+  mergeTag as mergeTagRequest,
+  removeTagAlias as removeTagAliasRequest,
 } from "$lib/api/generated/prismedia";
-import type { EntityCreateRequest } from "$lib/api/generated/model";
+import type { EntityCard, EntityCreateRequest } from "$lib/api/generated/model";
 import { requestInit, unwrapGenerated, type RequestOptions } from "$lib/api/generated-response";
 import {
   ENTITY_KIND,
@@ -55,4 +58,34 @@ export async function deleteTaxonomyEntity(
 ): Promise<void> {
   const response = await deleters[kind](id, requestInit(options));
   unwrapGenerated<void>(response, "Failed to delete entity", [204]);
+}
+
+/** Adds an alias to a tag. */
+export async function addTagAlias(
+  tagId: string,
+  alias: string,
+  options?: RequestOptions,
+): Promise<EntityCard> {
+  const response = await addTagAliasRequest(tagId, { alias }, requestInit(options));
+  return unwrapGenerated<EntityCard>(response, "Failed to add tag alias");
+}
+
+/** Removes an alias from a tag. */
+export async function removeTagAlias(
+  tagId: string,
+  alias: string,
+  options?: RequestOptions,
+): Promise<EntityCard> {
+  const response = await removeTagAliasRequest(tagId, alias, requestInit(options));
+  return unwrapGenerated<EntityCard>(response, "Failed to remove tag alias");
+}
+
+/** Merges a source tag into the canonical tag. */
+export async function mergeTag(
+  canonicalTagId: string,
+  sourceTagId: string,
+  options?: RequestOptions,
+): Promise<EntityCard> {
+  const response = await mergeTagRequest(canonicalTagId, { sourceTagId }, requestInit(options));
+  return unwrapGenerated<EntityCard>(response, "Failed to merge tags");
 }

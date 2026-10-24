@@ -19,3 +19,8 @@ public sealed class TagDetailRow {
     public Guid EntityId { get; set; }
     public bool IgnoreAutoTag { get; set; }
 }
+
+public sealed class TagAliasRow {
+    public Guid TagId { get; set; }
+    public string Alias { get; set; } = string.Empty;
+}

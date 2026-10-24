@@ -1,5 +1,5 @@
 import { fireEvent, render } from "@testing-library/svelte";
-import { tick } from "svelte";
+import { createRawSnippet, tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACQUISITION_STATUS, CAPABILITY_KIND, THUMBNAIL_META_ICON } from "$lib/api/generated/codes";
 import EntityThumbnail from "./EntityThumbnail.svelte";
@@ -220,5 +220,23 @@ describe("EntityThumbnail presentation", () => {
     await tick();
 
     expect(canvas).not.toHaveBeenCalled();
+  });
+
+  it("renders cardAction snippet inside the thumbnail caption", () => {
+    const cardActionSnippet = createRawSnippet(() => ({
+      render: () => `<button type="button" class="set-cover-btn">Set as cover</button>`,
+    }));
+
+    const { container } = render(EntityThumbnail, {
+      props: {
+        card: personCard(),
+        cardAction: cardActionSnippet,
+      },
+    });
+
+    const button = container.querySelector(".set-cover-btn");
+    expect(button).not.toBeNull();
+    expect(button?.closest(".card-action")).not.toBeNull();
+    expect(button?.closest(".thumbnail-caption")).not.toBeNull();
   });
 });

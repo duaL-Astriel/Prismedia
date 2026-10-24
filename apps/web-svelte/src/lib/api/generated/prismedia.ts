@@ -295,6 +295,7 @@ import type {
   SearchRequestsByPluginParams,
   SearchVideoSubtitlesRequest,
   SearchVideoSubtitlesResponse,
+  SetEntityCoverRequest,
   SettingDescriptor,
   SettingUpdateRequest,
   SettingsBatchUpdateRequest,
@@ -304,6 +305,8 @@ import type {
   StartBulkIdentifyParams,
   StashScraperListing,
   SubtitleProviderTestResponse,
+  TagAliasRequest,
+  TagMergeRequest,
   TrackManagedHoldingRequest,
   TranscodeCacheStatusResponse,
   UnidentifiedKindCount,
@@ -3112,6 +3115,56 @@ export const clearEntityImageAsset = async (id: string,
 
 
 
+export type setEntityCoverResponse200 = {
+  data: EntityCard
+  status: 200
+}
+
+export type setEntityCoverResponse400 = {
+  data: ApiProblem
+  status: 400
+}
+
+export type setEntityCoverResponse404 = {
+  data: ApiProblem
+  status: 404
+}
+
+export type setEntityCoverResponseSuccess = (setEntityCoverResponse200) & {
+  headers: Headers;
+};
+export type setEntityCoverResponseError = (setEntityCoverResponse400 | setEntityCoverResponse404) & {
+  headers: Headers;
+};
+
+export type setEntityCoverResponse = (setEntityCoverResponseSuccess | setEntityCoverResponseError)
+
+export const getSetEntityCoverUrl = (id: string,) => {
+
+
+
+
+  return `/api/entities/${id}/cover`
+}
+
+/**
+ * @summary Sets an included or linked item's image as the entity's cover artwork.
+ */
+export const setEntityCover = async (id: string,
+    setEntityCoverRequest: SetEntityCoverRequest, options?: RequestInit): Promise<setEntityCoverResponse> => {
+
+  return orvalFetch<setEntityCoverResponse>(getSetEntityCoverUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      setEntityCoverRequest,)
+  }
+);}
+
+
+
 export type updateEntityRatingResponse200 = {
   data: EntityCard
   status: 200
@@ -5758,6 +5811,166 @@ export const getTagPatch = async (id: string,
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(
       entityMetadataUpdateRequest,)
+  }
+);}
+
+
+
+export type addTagAliasResponse200 = {
+  data: EntityCard
+  status: 200
+}
+
+export type addTagAliasResponse400 = {
+  data: ApiProblem
+  status: 400
+}
+
+export type addTagAliasResponse404 = {
+  data: ApiProblem
+  status: 404
+}
+
+export type addTagAliasResponse409 = {
+  data: ApiProblem
+  status: 409
+}
+
+export type addTagAliasResponseSuccess = (addTagAliasResponse200) & {
+  headers: Headers;
+};
+export type addTagAliasResponseError = (addTagAliasResponse400 | addTagAliasResponse404 | addTagAliasResponse409) & {
+  headers: Headers;
+};
+
+export type addTagAliasResponse = (addTagAliasResponseSuccess | addTagAliasResponseError)
+
+export const getAddTagAliasUrl = (id: string,) => {
+
+
+
+
+  return `/api/tags/${id}/aliases`
+}
+
+/**
+ * @summary Add an alias to a tag.
+ */
+export const addTagAlias = async (id: string,
+    tagAliasRequest: TagAliasRequest, options?: RequestInit): Promise<addTagAliasResponse> => {
+
+  return orvalFetch<addTagAliasResponse>(getAddTagAliasUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      tagAliasRequest,)
+  }
+);}
+
+
+
+export type removeTagAliasResponse200 = {
+  data: EntityCard
+  status: 200
+}
+
+export type removeTagAliasResponse400 = {
+  data: ApiProblem
+  status: 400
+}
+
+export type removeTagAliasResponse404 = {
+  data: ApiProblem
+  status: 404
+}
+
+export type removeTagAliasResponseSuccess = (removeTagAliasResponse200) & {
+  headers: Headers;
+};
+export type removeTagAliasResponseError = (removeTagAliasResponse400 | removeTagAliasResponse404) & {
+  headers: Headers;
+};
+
+export type removeTagAliasResponse = (removeTagAliasResponseSuccess | removeTagAliasResponseError)
+
+export const getRemoveTagAliasUrl = (id: string,
+    alias: string,) => {
+
+
+
+
+  return `/api/tags/${id}/aliases/${alias}`
+}
+
+/**
+ * @summary Remove an alias from a tag.
+ */
+export const removeTagAlias = async (id: string,
+    alias: string, options?: RequestInit): Promise<removeTagAliasResponse> => {
+
+  return orvalFetch<removeTagAliasResponse>(getRemoveTagAliasUrl(id,alias),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+export type mergeTagResponse200 = {
+  data: EntityCard
+  status: 200
+}
+
+export type mergeTagResponse400 = {
+  data: ApiProblem
+  status: 400
+}
+
+export type mergeTagResponse404 = {
+  data: ApiProblem
+  status: 404
+}
+
+export type mergeTagResponse409 = {
+  data: ApiProblem
+  status: 409
+}
+
+export type mergeTagResponseSuccess = (mergeTagResponse200) & {
+  headers: Headers;
+};
+export type mergeTagResponseError = (mergeTagResponse400 | mergeTagResponse404 | mergeTagResponse409) & {
+  headers: Headers;
+};
+
+export type mergeTagResponse = (mergeTagResponseSuccess | mergeTagResponseError)
+
+export const getMergeTagUrl = (id: string,) => {
+
+
+
+
+  return `/api/tags/${id}/merge`
+}
+
+/**
+ * @summary Merge a source tag into this canonical tag.
+ */
+export const mergeTag = async (id: string,
+    tagMergeRequest: TagMergeRequest, options?: RequestInit): Promise<mergeTagResponse> => {
+
+  return orvalFetch<mergeTagResponse>(getMergeTagUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      tagMergeRequest,)
   }
 );}
 

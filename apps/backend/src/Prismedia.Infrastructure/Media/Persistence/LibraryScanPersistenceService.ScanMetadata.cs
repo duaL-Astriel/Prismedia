@@ -220,6 +220,26 @@ public sealed partial class LibraryScanPersistenceService {
                 .GroupBy(row => row.Title.ToLowerInvariant())
                 .ToDictionary(group => group.Key, group => group.First());
 
+            if (kindCode == EntityKind.Tag.ToCode()) {
+                var missingTitles = lowerTitles.Where(t => !foundByLower.ContainsKey(t)).ToArray();
+                if (missingTitles.Length > 0) {
+                    var matchingAliases = await _db.TagAliases
+                        .Where(a => missingTitles.Contains(a.Alias.ToLower()))
+                        .ToArrayAsync(cancellationToken);
+                    if (matchingAliases.Length > 0) {
+                        var canonicalTagIds = matchingAliases.Select(a => a.TagId).Distinct().ToArray();
+                        var canonicalEntities = await _db.Entities
+                            .Where(e => canonicalTagIds.Contains(e.Id))
+                            .ToDictionaryAsync(e => e.Id, cancellationToken);
+                        foreach (var alias in matchingAliases) {
+                            if (canonicalEntities.TryGetValue(alias.TagId, out var canonicalEntity)) {
+                                foundByLower[alias.Alias.ToLowerInvariant()] = canonicalEntity;
+                            }
+                        }
+                    }
+                }
+            }
+
             foreach (var pair in kindGroup) {
                 var key = pair.Key;
                 if (_taxonomyByTitle.TryGetValue(key, out var cached)) {

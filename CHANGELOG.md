@@ -14,6 +14,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- Galleries without explicit cover artwork automatically fall back to projecting their first element's cover, and people, tags, and studios without uploaded artwork fall back to their first linked media item's artwork. In the lightbox details, users can explicitly set the open image as the gallery cover, and on person, tag, and studio detail pages, associated media cards offer an accessible action to set that media's artwork as the entity's cover. Cards whose fallback media has no generated thumbnail show the placeholder instead of a broken image or local file path, and setting an image as a cover copies it into the served artwork cache.
+
+- In the universal lightbox, multi-touch pinch gestures scale images continuously around the touch focal point, double-tapping zooms into the tapped location as the view center, and double-tapping while zoomed resets back to fit scale. While zoomed beyond fit scale, dragging pans smoothly within clamped boundaries rather than triggering swipe navigation, preserving swipe navigation when at fit scale or at the pan edge.
+
+- Rotating a mobile device to landscape while video playback is engaged automatically enters fullscreen, and rotating back to portrait exits fullscreen. The behavior is configurable via an Auto-fullscreen on landscape toggle in Player Settings.
+
+- Tags support aliases and merging. Aliases allow multiple names to resolve to the same canonical tag across search, collection rules, library scans, and metadata plugins. Tag detail pages display active aliases with options to add or remove them, as well as a merge action to combine duplicate tags into a single canonical tag while consolidating all relationships, aliases, and media links without duplicates.
+
 - Movie and series folders, and movie file names, tagged with a provider ID in Radarr, Sonarr, Plex, Jellyfin, or Emby style, such as `{tmdb-603}`, `[tmdbid-603]`, or `{tvdb-81189}`, identify by that exact ID instead of a title search, in Auto Identify and in Identify. TMDB reads `tmdb` tags; TheTVDB and IMDb tags go to plugins that support them. IDs already saved on an item take precedence, and contradictory tags are ignored.
 
 - Audiobook files with embedded chapters, such as M4B, play chapter by chapter, like a book with one file per chapter. Next and Previous move between chapters; the timeline, elapsed time, and lock-screen controls cover the current chapter; Up Next lists the remaining chapters; and repeat-one repeats the current chapter. Each chapter plays under its mapped ebook chapter's title, falling back to the title in the audio file and then the Book's title. Listening progress and resume positions work as before.
@@ -212,6 +220,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Audio-track detail and saved-queue payloads no longer duplicate embedded artist and album fields outside the Entity's `embedded-audio-metadata` capability.
 
 ### Fixed
+
+- Video and audio playback volume and muted states are remembered in client storage across media changes, page reloads, and player transitions instead of resetting to 100%.
 
 - Installed plugins and Stash community scrapers remain available and discoverable when run from a relocated workspace or container whose recorded file paths point to a different absolute path.
 

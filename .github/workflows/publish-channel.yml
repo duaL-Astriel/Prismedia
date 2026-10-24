@@ -16,9 +16,6 @@ permissions:
   contents: read
   packages: write
 
-env:
-  IMAGE_NAME: ghcr.io/pauljoda/prismedia
-
 jobs:
   build:
     name: Build and publish ${{ matrix.channel }} image
@@ -44,6 +41,9 @@ jobs:
         id: tags
         shell: bash
         run: |
+          # Publish under the repository owner so forks push to their own registry namespace.
+          # GHCR image names must be lowercase.
+          IMAGE_NAME="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/prismedia"
           version="$(node -p "require('./package.json').version")"
           short_sha="${GITHUB_SHA::7}"
           channel="${{ matrix.channel }}"

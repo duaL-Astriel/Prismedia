@@ -3500,6 +3500,43 @@ public sealed class EfEntityReadServiceTests {
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<EfEntityAssetRowSweeper>.Instance)
             .SweepAsync(CancellationToken.None);
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetAsyncGalleryFallbackCoverNeverExposesChildSourcePath(bool withGeneratedThumbnail) {
+        await using var db = CreateContext();
+        var galleryId = Guid.NewGuid();
+        var imageId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        db.Entities.Add(new EntityRow { Id = galleryId, KindCode = EntityKind.Gallery.ToCode(), Title = "G", CreatedAt = now, UpdatedAt = now });
+        db.Entities.Add(new EntityRow { Id = imageId, ParentEntityId = galleryId, KindCode = EntityKind.Image.ToCode(), Title = "I", CreatedAt = now, UpdatedAt = now });
+        db.EntityFiles.Add(new EntityFileRow {
+            Id = Guid.NewGuid(), EntityId = imageId, Role = EntityFileRole.Source, Path = "/media/library/raw.jpg",
+            Source = FileSourceKind.Scan.ToCode(), CreatedAt = now, UpdatedAt = now
+        });
+        if (withGeneratedThumbnail) {
+            db.EntityFiles.Add(new EntityFileRow {
+                Id = Guid.NewGuid(), EntityId = imageId, Role = EntityFileRole.GridThumbnail, Path = "/assets/grid-thumbs/raw.jpg",
+                Source = FileSourceKind.Scan.ToCode(), CreatedAt = now, UpdatedAt = now
+            });
+        }
+        await db.SaveChangesAsync();
+        var user = TestUserContext.Admin();
+        var repository = new EfEntityRepository(db, user, EntityMappers.Kinds(db), EntityMappers.Capabilities(db, user));
+        var service = new EfEntityReadService(db, user, repository, ThumbnailContributors.For(db), new EfEntityProgressTopologyResolver(db));
+
+        var card = Assert.IsType<EntityCard>(await service.GetAsync(galleryId, hideNsfw: false, CancellationToken.None));
+
+        var images = card.Capabilities.OfType<ImagesCapability>().Single();
+        Assert.DoesNotContain("/media/library", images.CoverUrl ?? string.Empty);
+        Assert.DoesNotContain("/media/library", images.ThumbnailUrl ?? string.Empty);
+        if (withGeneratedThumbnail) {
+            Assert.Equal("/assets/grid-thumbs/raw.jpg", images.CoverUrl);
+        } else {
+            Assert.Null(images.CoverUrl);
+        }
+    }
+
     private static PrismediaDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<PrismediaDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())

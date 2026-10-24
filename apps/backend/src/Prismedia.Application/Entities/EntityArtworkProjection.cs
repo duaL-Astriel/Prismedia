@@ -1,5 +1,6 @@
 using Prismedia.Contracts.Entities;
 using Prismedia.Domain.Entities;
+using Prismedia.Domain.Media;
 using ContractEntityImageAsset = Prismedia.Contracts.Entities.EntityImageAsset;
 
 namespace Prismedia.Application.Entities;
@@ -25,15 +26,42 @@ internal static class EntityArtworkProjection {
             .Select(file => new ContractEntityImageAsset(file.Role, file.Path, file.MimeType))
             .ToArray();
         var originalCoverUrl = assets.FirstOrDefault()?.Path;
+        string? fallbackThumbnailUrl = null;
+        string? fallbackThumbnail2xUrl = null;
+
+        if (originalCoverUrl is null) {
+            if (entity.Kind == EntityKind.Gallery) {
+                var coverChild = ResolveGalleryCoverChild(entity);
+                if (coverChild is not null) {
+                    var childArtwork = Project(coverChild);
+                    originalCoverUrl = childArtwork.CoverUrl
+                        ?? childArtwork.ThumbnailUrl;
+                    fallbackThumbnailUrl = childArtwork.ThumbnailUrl ?? childArtwork.CoverUrl ?? originalCoverUrl;
+                    fallbackThumbnail2xUrl = childArtwork.Thumbnail2xUrl;
+                }
+            } else if (entity.Kind is EntityKind.Person or EntityKind.Tag or EntityKind.Studio) {
+                var linkedMedia = ResolveFirstLinkedMediaEntity(entity);
+                if (linkedMedia is not null) {
+                    var mediaArtwork = Project(linkedMedia);
+                    originalCoverUrl = mediaArtwork.CoverUrl
+                        ?? mediaArtwork.ThumbnailUrl;
+                    fallbackThumbnailUrl = mediaArtwork.ThumbnailUrl ?? mediaArtwork.CoverUrl ?? originalCoverUrl;
+                    fallbackThumbnail2xUrl = mediaArtwork.Thumbnail2xUrl;
+                }
+            }
+        }
+
         var preservesOriginalArtwork = EntityKindRegistry.Describe(entity.Kind).Presentation.ArtworkSurface ==
             EntityArtworkSurface.BrandPlate;
         var thumbnailUrl = preservesOriginalArtwork
             ? originalCoverUrl
             : entity.EntityFiles.FirstOrDefault(file => file.Role == EntityFileRole.GridThumbnail)?.Path
+                ?? fallbackThumbnailUrl
                 ?? originalCoverUrl;
         var thumbnail2xUrl = preservesOriginalArtwork
             ? null
-            : entity.EntityFiles.FirstOrDefault(file => file.Role == EntityFileRole.GridThumbnail2x)?.Path;
+            : entity.EntityFiles.FirstOrDefault(file => file.Role == EntityFileRole.GridThumbnail2x)?.Path
+                ?? fallbackThumbnail2xUrl;
 
         return new ImagesCapability(
             SupportedManualImageRoles,
@@ -42,6 +70,29 @@ internal static class EntityArtworkProjection {
             thumbnail2xUrl,
             originalCoverUrl);
     }
+
+    private static Entity? ResolveGalleryCoverChild(Entity entity) {
+        if (entity is Gallery gallery && gallery.CoverImageId.HasValue) {
+            var explicitChild = entity.ChildEntities.FirstOrDefault(child => child.Id == gallery.CoverImageId.Value);
+            if (explicitChild is not null) {
+                return explicitChild;
+            }
+        }
+
+        return entity.ChildEntities
+            .OrderBy(child => child.SortOrder ?? int.MaxValue)
+            .ThenBy(child => child.Title)
+            .ThenBy(child => child.Id)
+            .FirstOrDefault();
+    }
+
+    private static Entity? ResolveFirstLinkedMediaEntity(Entity entity) =>
+        entity.Relationships
+            .Where(relationship => EntityKindRegistry.Describe(relationship.Kind).Category == EntityKindCategory.Media)
+            .OrderBy(relationship => relationship.SortOrder ?? int.MaxValue)
+            .ThenBy(relationship => relationship.Title)
+            .ThenBy(relationship => relationship.Id)
+            .FirstOrDefault();
 
     private static IEnumerable<Prismedia.Domain.Entities.EntityFile> OrderedArtworkFiles(Entity entity) =>
         entity.EntityFiles

@@ -1,6 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import VideoPlayer from "./VideoPlayer.svelte";
+import {
+  resetVolumePreferenceForTesting,
+  writeVolumePreference,
+} from "$lib/player/volume-preference";
 import type {
   SubtitleAppearance,
   SubtitlePreferenceTerm,
@@ -65,6 +69,9 @@ describe("VideoPlayer", () => {
         }),
       ),
     );
+    resetVolumePreferenceForTesting();
+    window.localStorage?.removeItem?.("prismedia:player:volume");
+    window.localStorage?.removeItem?.("prismedia:player:muted");
     window.localStorage?.removeItem?.("prismedia:subtitle-appearance");
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
@@ -477,7 +484,7 @@ describe("VideoPlayer", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Player settings" }));
     await fireEvent.click(screen.getByRole("button", { name: /Captions/ }));
-    await fireEvent.click(screen.getByRole("button", { name: /English/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Engl/ }));
 
     expect(onActiveSubtitleTrackIdChange).toHaveBeenCalledWith("track-en");
     expect(screen.queryByText("Captions on.")).not.toBeInTheDocument();
@@ -524,4 +531,63 @@ describe("VideoPlayer", () => {
     });
   });
 
+  it("initializes player volume and muted state from saved preferences", async () => {
+    writeVolumePreference({ volume: 0.35, muted: false });
+
+    render(VideoPlayer, {
+      props: {
+        src: "/api/videos/video-1/hls/master.m3u8",
+        defaultPlaybackMode: "hls",
+      },
+    });
+
+    await waitFor(() => {
+      const player = document.querySelector("media-player");
+      expect(player).toBeInTheDocument();
+      expect(player?.getAttribute("volume")).toBe("0.35");
+    });
+  });
+
+  it("restores saved volume on source transitions", async () => {
+    writeVolumePreference({ volume: 0.65, muted: false });
+
+    const { rerender } = render(VideoPlayer, {
+      props: {
+        src: "/api/videos/video-1/hls/master.m3u8",
+        defaultPlaybackMode: "hls",
+      },
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector("media-player")?.getAttribute("volume")).toBe("0.65");
+    });
+
+    writeVolumePreference({ volume: 0.25, muted: false });
+
+    rerender({
+      src: "/api/videos/video-2/hls/master.m3u8",
+      defaultPlaybackMode: "hls",
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector("media-player")?.getAttribute("volume")).toBe("0.25");
+    });
+  });
+
+  it("allows toggling auto-fullscreen on landscape from settings menu", async () => {
+    render(VideoPlayer, {
+      props: {
+        src: "/api/videos/video-1/hls/master.m3u8",
+        defaultPlaybackMode: "hls",
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Player settings" }));
+    const toggle = screen.getByRole("switch", { name: /Auto-fullscreen on landscape/i });
+    expect(toggle).toBeInTheDocument();
+    expect(toggle).toBeChecked();
+
+    await fireEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
+  });
 });

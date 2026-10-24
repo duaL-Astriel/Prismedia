@@ -1,6 +1,7 @@
 import {
   createEntityMarker as createEntityMarkerRequest,
   deleteEntityMarker as deleteEntityMarkerRequest,
+  setEntityCover as setEntityCoverRequest,
   updateEntity as updateEntityRequest,
   updateEntityByKind,
   updateEntityFlags as updateEntityFlagsRequest,
@@ -102,6 +103,16 @@ export function uploadEntityImageAsset(
   return uploadFile<EntityCard>(`/entities/${id}/images/${encodeURIComponent(role)}`, file, undefined, {
     signal: options?.signal,
   });
+}
+
+export function setEntityCover(
+  targetEntityId: string,
+  itemEntityId: string,
+  options?: RequestOptions,
+): Promise<EntityCard> {
+  return setEntityCoverRequest(targetEntityId, { itemEntityId }, requestInit(options)).then((response) =>
+    unwrapGenerated<EntityCard>(response, `Failed to set cover for ${targetEntityId}`),
+  );
 }
 
 export function clearEntityImageAsset(

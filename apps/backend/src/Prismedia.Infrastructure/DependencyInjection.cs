@@ -276,6 +276,7 @@ public static class DependencyInjection {
         services.AddScoped<IEntityPositionEnricher>(provider =>
             provider.GetRequiredService<EntityMetadataApplyService>());
         services.AddScoped<IEntityManagementService, EntityManagementService>();
+        services.AddScoped<ITagManagementService, TagManagementService>();
         services.AddScoped<IMediaEntityDeletionService, MediaEntityDeletionService>();
         services.AddScoped<IIdentifyTargetEligibilityService, EfIdentifyTargetEligibilityService>();
         services.AddScoped<IdentifyPluginService>();
@@ -402,6 +403,11 @@ public static class DependencyInjection {
                 provider.GetRequiredService<SkiaThumbnailCollageComposer>()));
         services.AddScoped<IEntityImageAssetMutationService>(provider =>
             new EntityImageAssetMutationService(
+                provider.GetRequiredService<PrismediaDbContext>(),
+                new EntityImageAssetStorageOptions(cacheDir),
+                provider.GetRequiredService<IGridThumbnailService>()));
+        services.AddScoped<ISetEntityCoverService>(provider =>
+            new SetEntityCoverService(
                 provider.GetRequiredService<PrismediaDbContext>(),
                 new EntityImageAssetStorageOptions(cacheDir),
                 provider.GetRequiredService<IGridThumbnailService>()));

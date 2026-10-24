@@ -1,19 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import {
-    ListMusic,
-    Minimize2,
-    Music,
-    Music2,
-    Music4,
-    Pause,
-    Play,
-    Repeat,
-    Repeat1,
-    Shuffle,
-    SkipBack,
-    SkipForward,
-    X,
+    ListMusic, Minimize2, Music, Music2, Music4, Pause, Play,
+    Repeat, Repeat1, Shuffle, SkipBack, SkipForward, X,
   } from "@lucide/svelte";
   import { Button, Popover, buttonVariants,  cn  } from "@prismedia/ui-svelte";
   import { formatDuration } from "$lib/utils/format";
@@ -36,6 +25,7 @@
     type AudioQueueEntry,
   } from "$lib/stores/audio-playback.svelte";
   import { audioEntryPosition } from "$lib/player/audio-chapters";
+  import { clampVolume, onVolumePreferenceChange, resolveMuteToggle, writeVolumePreference } from "$lib/player/volume-preference";
   import { useAppChrome } from "$lib/stores/app-chrome.svelte";
   import {
     AUDIO_PLAYBACK_DIAGNOSTIC_EVENT,
@@ -430,8 +420,10 @@
 
   function toggleMute() {
     if (!audioEl) return;
-    audioEl.muted = !audioEl.muted;
-    playback.muted = audioEl.muted;
+    const { muted: nextMuted, volume: nextVolume } = resolveMuteToggle(playback.muted, playback.volume);
+    audioEl.muted = playback.muted = nextMuted;
+    audioEl.volume = playback.volume = nextVolume;
+    writeVolumePreference({ volume: nextVolume, muted: nextMuted });
   }
 
   function togglePlay() {
@@ -550,12 +542,11 @@
 
   function handleVolumeChange(nextVolume: number) {
     if (!audioEl) return;
-    audioEl.volume = nextVolume;
-    playback.volume = nextVolume;
-    if (nextVolume > 0 && audioEl.muted) {
-      audioEl.muted = false;
-      playback.muted = false;
-    }
+    const clamped = clampVolume(nextVolume);
+    const nextMuted = clamped > 0 ? false : playback.muted;
+    audioEl.volume = playback.volume = clamped;
+    audioEl.muted = playback.muted = nextMuted;
+    writeVolumePreference({ volume: clamped, muted: nextMuted });
   }
 
   function recordTrackPlay(trackId: string) {
@@ -668,6 +659,12 @@
     audioEl.volume = volume;
     audioEl.muted = muted;
   });
+
+  $effect(() => onVolumePreferenceChange((pref) => {
+    playback.volume = pref.volume;
+    playback.muted = pref.muted;
+    if (audioEl) { audioEl.volume = pref.volume; audioEl.muted = pref.muted; }
+  }));
 
   $effect(() => {
     if (!audioEl) return;

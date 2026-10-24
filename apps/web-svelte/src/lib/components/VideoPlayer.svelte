@@ -51,9 +51,19 @@
   import { VIDEO_PLAYBACK_METHOD, type PlaybackModeCode } from "$lib/api/generated/codes";
   import {
     enterMediaFullscreen,
-    exitDocumentFullscreen,
-    isDocumentFullscreen,
+    evaluateFullscreenChange,
+    evaluateOrientationDecision,
+    exitMediaFullscreen,
+    getDeviceOrientation,
+    isMediaFullscreen,
+    isTouchViewport,
+    subscribeOrientationChange,
+    type OrientationFullscreenState,
   } from "$lib/fullscreen";
+  import {
+    readAutoFullscreenPreference,
+    writeAutoFullscreenPreference,
+  } from "$lib/player/auto-fullscreen-preference";
   import { buildMediaArtwork } from "$lib/media-session";
   import {
     abortVideoElementLoad,
@@ -70,6 +80,14 @@
     readQualityPreference,
     writeQualityPreference,
   } from "$lib/player/quality-preference";
+  import {
+    clampVolume,
+    onVolumePreferenceChange,
+    readVolumePreference,
+    isEffectivelyMuted,
+    resolveMuteToggle,
+    writeVolumePreference,
+  } from "$lib/player/volume-preference";
   import { resolveInitialVideoPlayerSourcePolicy } from "$lib/player/video-player-source-policy";
   import { isFatalVideoDecodeError } from "$lib/player/video-player-errors";
   import { shouldPreferNativeHLS } from "$lib/player/native-hls";
@@ -250,8 +268,9 @@
   let playTracked = false;
   let endedTracked = false;
   let lastSourceKey = "";
+  const initialVolumePref = readVolumePreference();
   let muteTouched = false;
-  let lastNonZeroVolume = 1;
+  let lastNonZeroVolume = initialVolumePref.lastNonZeroVolume;
   let pendingSeekTime: number | null = null;
   let pendingAutoPlay = $state(false);
   let markerChaptersTrack: TextTrack | null = null;
@@ -277,8 +296,9 @@
   let playing = $state(false);
   let buffering = $state(false);
   // svelte-ignore state_referenced_locally
-  let muted = $state(initialMuted);
-  let volume = $state(1);
+  let muted = $state(initialMuted ? true : initialVolumePref.muted);
+  let volume = $state(initialVolumePref.volume);
+  const displayMuted = $derived(isEffectivelyMuted(muted, volume));
   let playbackRate = $state(1);
   let showControls = $state(true);
   let bufferAhead = $state(0);
@@ -298,6 +318,25 @@
   let timelineTrickplayError = $state(false);
   let settingsMenuRendered = $state(false);
   let settingsView = $state<SettingsView>("root");
+  let autoFullscreenOnLandscape = $state(readAutoFullscreenPreference());
+  let orientationState = $state<OrientationFullscreenState>({
+    lastOrientation: null,
+    manualExitOrientation: null,
+  });
+
+  function handleAutoFullscreenChange(enabled: boolean) {
+    autoFullscreenOnLandscape = enabled;
+    writeAutoFullscreenPreference(enabled);
+  }
+
+  function handleFullscreenStateChange() {
+    const isFullscreen = isMediaFullscreen(videoEl);
+    orientationState = evaluateFullscreenChange(
+      isFullscreen,
+      getDeviceOrientation(),
+      orientationState,
+    );
+  }
   let internalSubtitleId = $state<string | null>(null);
   let activeTrackCues = $state<SubtitleCue[]>([]);
   let activeCueText = $state<string | null>(null);
@@ -692,12 +731,16 @@
   }
 
   function applyInitialMuted() {
-    if (!initialMuted || muteTouched) return;
-    syncMutedState(true, 0);
+    if (muteTouched) return;
+    if (initialMuted) {
+      syncMutedState(true, volume);
+    } else {
+      const pref = readVolumePreference();
+      syncMutedState(pref.muted, pref.volume);
+    }
   }
 
   function scheduleInitialMutedSync() {
-    if (!initialMuted || muteTouched) return;
     clearInitialMutedSync();
     let attempts = 0;
     const sync = () => {
@@ -841,14 +884,21 @@
     muteTouched = true;
     clearInitialMutedSync();
     const video = mediaElement();
-    const nextMuted = !(player?.muted || video?.muted || muted);
-    syncMutedState(nextMuted, nextMuted ? 0 : lastNonZeroVolume || 1);
+    const { muted: nextMuted, volume: nextVolume } = resolveMuteToggle(
+      Boolean(player?.muted || video?.muted || muted),
+      volume,
+    );
+    syncMutedState(nextMuted, nextVolume);
+    writeVolumePreference({ volume: nextVolume, muted: nextMuted });
   }
 
   function handleVolumeChange(next: number) {
     muteTouched = true;
     clearInitialMutedSync();
-    syncMutedState(next === 0, next);
+    const clamped = clampVolume(next);
+    const nextMuted = clamped > 0 ? false : muted;
+    syncMutedState(nextMuted, clamped);
+    writeVolumePreference({ volume: clamped, muted: nextMuted });
   }
 
   function applyPlaybackRate(nextRate: number) {
@@ -972,8 +1022,9 @@
   }
 
   async function toggleFullscreen() {
-    if (isDocumentFullscreen()) {
-      exitDocumentFullscreen();
+    if (isMediaFullscreen(videoEl)) {
+      exitMediaFullscreen(videoEl);
+      orientationState = evaluateFullscreenChange(false, getDeviceOrientation(), orientationState);
       return;
     }
     if (!containerEl) return;
@@ -1090,7 +1141,10 @@
     playTracked = false;
     endedTracked = false;
     muteTouched = false;
-    lastNonZeroVolume = 1;
+    const volumePref = readVolumePreference();
+    volume = volumePref.volume;
+    lastNonZeroVolume = volumePref.lastNonZeroVolume;
+    muted = initialMuted ? true : volumePref.muted;
     autoSelected = false;
     scheduleInitialMutedSync();
   });
@@ -1252,6 +1306,18 @@
   });
 
   $effect(() => {
+    return onVolumePreferenceChange((pref) => {
+      if (muteTouched) return;
+      volume = pref.volume;
+      lastNonZeroVolume = pref.lastNonZeroVolume;
+      if (!initialMuted) {
+        muted = pref.muted;
+      }
+      syncMutedState(muted, volume);
+    });
+  });
+
+  $effect(() => {
     const el = player;
     if (!el) return;
     scheduleInitialMutedSync();
@@ -1333,8 +1399,9 @@
       updateBuffered();
     };
     const onNativeVolumeChange = () => {
-      muted = video.muted || video.volume === 0;
+      muted = video.muted;
       volume = video.volume;
+      if (volume > 0) lastNonZeroVolume = volume;
     };
     const onNativeRateChange = () => {
       playbackRate = video.playbackRate;
@@ -1351,6 +1418,7 @@
     video.addEventListener("seeked", onNativeSeeked);
     video.addEventListener("volumechange", onNativeVolumeChange);
     video.addEventListener("ratechange", onNativeRateChange);
+    video.addEventListener("webkitendfullscreen", handleFullscreenStateChange);
     return () => {
       video.removeEventListener("timeupdate", onNativeTimeUpdate);
       video.removeEventListener("progress", onProgress);
@@ -1364,6 +1432,7 @@
       video.removeEventListener("seeked", onNativeSeeked);
       video.removeEventListener("volumechange", onNativeVolumeChange);
       video.removeEventListener("ratechange", onNativeRateChange);
+      video.removeEventListener("webkitendfullscreen", handleFullscreenStateChange);
     };
   });
 
@@ -1375,12 +1444,49 @@
     scheduleInitialMutedSync();
     if (showCastControls && fullChrome) void loadGoogleCastFramework();
 
+    orientationState = {
+      lastOrientation: getDeviceOrientation(),
+      manualExitOrientation: null,
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenStateChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenStateChange);
+
+    const unsubOrientation = subscribeOrientationChange((newOrientation) => {
+      const isEngaged = playing || playTracked;
+      const isFullscreen = isMediaFullscreen(videoEl);
+      const decision = evaluateOrientationDecision({
+        currentOrientation: newOrientation,
+        autoFullscreenEnabled: autoFullscreenOnLandscape,
+        isTouchViewport: isTouchViewport(),
+        isEngaged,
+        isFullscreen,
+        state: orientationState,
+      });
+      orientationState = decision.nextState;
+
+      if (decision.action === "enter-fullscreen") {
+        if (containerEl) {
+          void enterMediaFullscreen(containerEl, videoEl).then((entered) => {
+            if (!entered) {
+              playerNotice = "Fullscreen is not available for this browser.";
+            }
+          });
+        }
+      } else if (decision.action === "exit-fullscreen") {
+        exitMediaFullscreen(videoEl);
+      }
+    });
+
     const handleKey = createVideoKeyboardHandler({ togglePlay, seek, toggleMute, toggleFullscreen });
 
     if (enableKeyboardShortcuts) {
       window.addEventListener("keydown", handleKey);
     }
     return () => {
+      unsubOrientation();
+      document.removeEventListener("fullscreenchange", handleFullscreenStateChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenStateChange);
       abortVideoElementLoad(mediaElement());
       clearControlsTimer();
       clearInitialMutedSync();
@@ -1477,7 +1583,7 @@
 
   function handleVolumeChangeEvent(_event: Event) {
     const video = mediaElement();
-    muted = Boolean(player?.muted || video?.muted || player?.volume === 0 || video?.volume === 0);
+    muted = Boolean(player?.muted ?? video?.muted ?? muted);
     volume = player?.volume ?? video?.volume ?? volume;
     if (volume > 0) lastNonZeroVolume = volume;
   }
@@ -1562,7 +1668,8 @@
         posterLoad="eager"
         autoPlay={autoPlay}
         loop={autoRepeat}
-        muted={initialMuted}
+        muted={initialMuted ? true : muted}
+        volume={volume}
         bind:this={player}
         onclick={(event) => {
           if (!fullChrome) {
@@ -1686,8 +1793,8 @@
             />
 
             <div class="hidden sm:flex items-center gap-2 text-white/80">
-              <Button variant="ghost" size="icon" type="button" onclick={toggleMute} class="transition-colors hover:text-white" aria-label={muted ? "Unmute" : "Mute"}>
-                {#if muted}<VolumeX class="h-4 w-4" />{:else}<Volume2 class="h-4 w-4" />{/if}
+              <Button variant="ghost" size="icon" type="button" onclick={toggleMute} class="transition-colors hover:text-white" aria-label={displayMuted ? "Unmute" : "Mute"} aria-pressed={displayMuted}>
+                {#if displayMuted}<VolumeX class="h-4 w-4" />{:else}<Volume2 class="h-4 w-4" />{/if}
               </Button>
               <Slider type="single" min={0} max={1} step={0.05} value={muted ? 0 : volume} onValueChange={handleVolumeChange} thumbLabel="Volume" class="w-20" />
             </div>
@@ -1725,13 +1832,15 @@
           activeSubtitleId={activeSubtitleId}
           {activeSubtitleLabel}
           {appearance}
+          {autoFullscreenOnLandscape}
           open={settingsMenuRendered}
-          portalTarget={settingsMenuRendered && isDocumentFullscreen() ? containerEl : null}
+          portalTarget={settingsMenuRendered && isMediaFullscreen(videoEl) ? containerEl : null}
           {displayedAudioTrackLabel}
           {displayedAudioTracks}
           {localAppearance}
           onAppearanceChange={handleAppearanceChange}
           onAppearanceReset={handleAppearanceReset}
+          onAutoFullscreenChange={handleAutoFullscreenChange}
           onClose={closeSettings}
           onOpenView={openSettings}
           onPlaybackRateChange={applyPlaybackRate}
