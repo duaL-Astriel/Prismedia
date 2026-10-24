@@ -6,7 +6,7 @@
  * transition for an untouched toolbar.
  */
 export class EntityGridToolbarCollapseController {
-  /** Whether the toolbar's filter and bulk-selection rows are currently hidden. */
+  /** Whether the toolbar's active-filter row is currently hidden. */
   barsCollapsed = $state(false);
 
   #collapsePinned: boolean;

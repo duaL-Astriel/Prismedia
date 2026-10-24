@@ -4,13 +4,10 @@
   import { entityGridFilterFromId } from "$lib/entities/entity-grid";
   import type {
     EntityGridFilterOption,
-    EntityGridBulkAction,
     EntityGridSort,
     EntityGridSortDir,
     EntityGridViewMode,
   } from "$lib/entities/entity-grid";
-  import type { CollectionEntityType } from "$lib/collections/models";
-  import BulkSelectionBar from "./BulkSelectionBar.svelte";
   import EntityGridToolbarActiveFilters from "./EntityGridToolbarActiveFilters.svelte";
   import EntityGridToolbarHero from "./EntityGridToolbarHero.svelte";
   import { EntityGridToolbarCollapseController } from "./entity-grid-toolbar-collapse-controller.svelte";
@@ -18,16 +15,8 @@
   interface Props {
     activeFilterIds: string[];
     activePresetId?: string | null;
-    allSelectedNsfw: boolean;
-    /** True when every selected card is a wanted placeholder; enables the Remove wanted bulk action. */
-    allSelectedWanted?: boolean;
-    /** Removes the selected wanted placeholders (delete + discovery blacklist). */
-    onRemoveWanted?: () => void;
     /** Persisted collapse state for the secondary toolbar rows; seeds the initial view. */
     barsCollapsed?: boolean;
-    bulkActions: EntityGridBulkAction[];
-    /** Collection-eligible members of the current selection, used by the Add to Collection menu. */
-    collectionItems: { entityType: CollectionEntityType; entityId: string }[];
     canClearFilters: boolean;
     /** When true, exposes the vertical feed view mode toggle. */
     enableFeedView?: boolean;
@@ -42,11 +31,8 @@
     /** Fired when the user manually collapses/expands the secondary rows, so the state can persist. */
     onBarsCollapsedChange?: (collapsed: boolean) => void;
     onClearFilters: () => void;
-    onClearSelection: () => void;
     onDeletePreset: (id: string) => void;
     onDrawerOpenChange: (open: boolean) => void;
-    onSelectAllVisible: () => void;
-    onSelectionActiveChange: (active: boolean) => void;
     onOverwritePreset: (id: string) => void;
     onQueryChange: (query: string) => void;
     onMediaWallChange: (mediaWall: boolean) => void;
@@ -54,19 +40,12 @@
     onScaleChange: (scale: number) => void;
     onSortByChange: (sortBy: EntityGridSort) => void;
     onSortDirChange: (sortDir: EntityGridSortDir) => void;
-    onToggleNsfwFlag: (markNsfw: boolean) => void;
     onReshuffle: () => void;
     onViewModeChange: (viewMode: EntityGridViewMode) => void;
     presets: FilterPreset[];
     mediaWall: boolean;
     query: string;
     scale: number;
-    selectable: boolean;
-    /** Whether the selection bar offers the Mark NSFW action (off for non-library grids). */
-    showNsfwAction?: boolean;
-    selectedCount: number;
-    selectedIds: string[];
-    selectionActive: boolean;
     sortBy: EntityGridSort;
     sortDir: EntityGridSortDir;
     viewMode: EntityGridViewMode;
@@ -75,12 +54,7 @@
   let {
     activeFilterIds,
     activePresetId = null,
-    allSelectedNsfw,
-    allSelectedWanted = false,
-    onRemoveWanted,
     barsCollapsed: initialBarsCollapsed = false,
-    bulkActions,
-    collectionItems,
     canClearFilters,
     enableFeedView = false,
     drawerOpen,
@@ -92,11 +66,8 @@
     onApplyPreset,
     onBarsCollapsedChange,
     onClearFilters,
-    onClearSelection,
     onDeletePreset,
     onDrawerOpenChange,
-    onSelectAllVisible,
-    onSelectionActiveChange,
     onOverwritePreset,
     onQueryChange,
     onMediaWallChange,
@@ -104,18 +75,12 @@
     onScaleChange,
     onSortByChange,
     onSortDirChange,
-    onToggleNsfwFlag,
     onReshuffle,
     onViewModeChange,
     presets,
     mediaWall,
     query,
     scale,
-    selectable,
-    showNsfwAction = true,
-    selectedCount,
-    selectedIds,
-    selectionActive,
     sortBy,
     sortDir,
     viewMode,
@@ -127,12 +92,10 @@
       .filter((option): option is EntityGridFilterOption => Boolean(option)),
   );
 
-  // The active-filter chip row and the selection/bulk row are the two secondary
-  // toolbar rows that can be collapsed to keep the bar compact (especially on
-  // mobile). The toggle only appears when at least one of them is present.
-  const hasCollapsibleRows = $derived(
-    selectable || activeFilters.length > 0 || canClearFilters,
-  );
+  // The active-filter chip row is the secondary toolbar row that can be collapsed
+  // to keep the bar compact (especially on mobile). Selection actions live in the
+  // grid's floating bar instead, so they are never collapsed or scrolled away.
+  const hasCollapsibleRows = $derived(activeFilters.length > 0 || canClearFilters);
 
   // A persisted value seeds this mount; later prop changes must not overwrite a
   // manual in-session choice or the controller's scroll-driven compact state.
@@ -187,25 +150,6 @@
         {canClearFilters}
         {onActiveFilterIdsChange}
         {onClearFilters}
-      />
-    {/if}
-
-    {#if selectable && !collapse.barsCollapsed}
-      <BulkSelectionBar
-        {allSelectedNsfw}
-        {allSelectedWanted}
-        {onRemoveWanted}
-        {bulkActions}
-        {collectionItems}
-        {onClearSelection}
-        {onSelectAllVisible}
-        {onSelectionActiveChange}
-        {onToggleNsfwFlag}
-        {showNsfwAction}
-        {selectedCount}
-        {selectedIds}
-        {selectionActive}
-        tuckedAfterPrevious={activeFilters.length > 0 || canClearFilters}
       />
     {/if}
   </div>

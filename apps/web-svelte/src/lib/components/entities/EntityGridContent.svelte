@@ -23,7 +23,8 @@
     onResetFilters?: () => void;
     selectable: boolean;
     selectedIds: string[];
-    selectionActive: boolean;
+    /** While true every card shows its checkbox and a plain click toggles selection instead of opening it. */
+    selectMode: boolean;
     viewMode: EntityGridViewMode;
     cardAction?: Snippet<[EntityThumbnailCard]>;
   }
@@ -43,7 +44,7 @@
     onResetFilters,
     selectable,
     selectedIds,
-    selectionActive,
+    selectMode,
     viewMode,
   }: Props = $props();
 
@@ -79,10 +80,10 @@
         layout={viewMode === "feed" ? "grid" : viewMode}
         linkable={cardLinks && !onCardActivate}
         mediaOnly={mediaWall}
-        onActivate={onCardActivate ? (activatedCard) => onCardActivate(activatedCard, cards) : undefined}
+        onActivate={onCardActivate && !selectMode ? (activatedCard) => onCardActivate(activatedCard, cards) : undefined}
         {hoverPreviewSuppressed}
-        selectable={selectable && selectionActive}
-        selectMode={selectionActive}
+        {selectable}
+        {selectMode}
         selected={selectedIds.includes(card.entity.id)}
         onSelectedChange={(selected) => onCardSelectedChange(card.entity.id, selected)}
       />

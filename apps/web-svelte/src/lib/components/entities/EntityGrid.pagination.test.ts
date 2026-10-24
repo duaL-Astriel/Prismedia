@@ -8,6 +8,7 @@ import EntityGrid from "./EntityGrid.test-harness.svelte";
 vi.mock("svelte/transition", async (importOriginal) => ({
   ...await importOriginal<typeof import("svelte/transition")>(),
   slide: () => ({ duration: 0 }),
+  fly: () => ({ duration: 0 }),
 }));
 
 const GRID_PREFS_DEFAULTS = {
@@ -243,7 +244,8 @@ describe("EntityGrid pagination", () => {
     expect(onCardActivate.mock.calls[0][1]).toHaveLength(100);
   });
 
-  it("keeps the current page and card order when secondary toolbar rows expand", async () => {
+  it("keeps the current page and card order when the filter toolbar row expands", async () => {
+    seedGridPrefs("toolbar-expansion-test", { query: "Video" });
     const onRequestChange = vi.fn();
     const { container } = render(EntityGrid, {
       cards: Array.from({ length: 150 }, (_, index) => card(index)),
@@ -257,9 +259,9 @@ describe("EntityGrid pagination", () => {
     expect(originalTitles).toHaveLength(50);
     const originalRequests = onRequestChange.mock.calls.length;
 
-    await fireEvent.click(screen.getByRole("button", { name: "Hide filter and selection rows" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Hide filter row" }));
     expect(readGridPrefs("toolbar-expansion-test")?.barsCollapsed).toBe(true);
-    await fireEvent.click(screen.getByRole("button", { name: "Show filter and selection rows" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Show filter row" }));
 
     expect(titles()).toEqual(originalTitles);
     expect(screen.getByText("Page 2 / 2")).toBeInTheDocument();
@@ -281,7 +283,7 @@ describe("EntityGrid pagination", () => {
     expect(container.querySelector(".filter-row")).toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: "Media wall" }));
     expect(container.querySelector(".filter-row")).toBeNull();
-    await fireEvent.click(screen.getByRole("button", { name: "Select" }));
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Select Video 0000" }));
     await fireEvent.click(screen.getByRole("button", { name: "Select all" }));
     expect(container.querySelector(".filter-row")).toBeNull();
   });
@@ -296,7 +298,7 @@ describe("EntityGrid pagination", () => {
     });
     await fireEvent.click(screen.getByRole("button", { name: "Sort ascending; switch to descending" }));
     await fireEvent.input(screen.getByRole("searchbox"), { target: { value: "Video" } });
-    await fireEvent.click(screen.getByRole("button", { name: "Select" }));
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Select Video 0000" }));
     await fireEvent.click(screen.getByRole("button", { name: "Select all" }));
     const selectedIds = onSelectionChange.mock.lastCall?.[0];
     expect(selectedIds).toHaveLength(6);

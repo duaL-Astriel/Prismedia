@@ -97,6 +97,10 @@ Grids sort and filter across the **entire** collection, not just the loaded page
   **On disk** source ownership from **Wanted**, Pending, Searching, Downloading, Imported, Failed,
   Cancelled, and Needs attention acquisition states; it does not treat artwork as a media file.
 - **Views:** Grid, List, Feed (images/galleries), and a media-wall toggle.
+- **Select:** hover a card and tick its checkbox (touch screens always show it). While anything is
+  selected, every card shows its checkbox and a click selects instead of opening, and a floating bar at the
+  bottom of the screen offers Select all, Clear, and bulk actions such as Add to collection, Mark NSFW, or
+  Identify. Clearing the selection returns cards to normal.
 
 Each grid remembers its search, sort, view, card size, and toolbar state per page and per device.
 

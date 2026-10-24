@@ -133,6 +133,7 @@
       <Loader2 class="h-5 w-5 animate-spin text-text-accent" />
     </div>
   {:else}
+    <!-- The one thing to do here: identify what is selected, from the grid's floating selection bar. -->
     <EntityGrid
       {cards}
       selectable
@@ -140,36 +141,22 @@
       emptyTitle={showAll ? `No ${kindLabel.toLowerCase()} in library` : `All ${kindLabel.toLowerCase()} organized`}
       emptyMessage=""
       onSelectionChange={(ids) => (selectedIds = ids)}
-      initialSelectionActive
+      selectionMode
       cardLinks={false}
-      bulkActions={activeProvider
-        ? [
-            {
-              id: "identify-bulk",
-              label: `Identify with ${activeProvider.name}`,
-              onRun: (ids) => store.startBulk(activeProvider.id, filteredEntities.filter((e) => ids.includes(e.id))),
-            },
-          ]
-        : []}
-    />
-  {/if}
-
-  <!-- The one thing to do here: identify what is selected. Floating so it is never scrolled away. -->
-  {#if !loading && activeProvider && cards.length > 0}
-    <div class="pointer-events-none sticky bottom-24 z-30 flex justify-center md:bottom-5">
-      <div class="app-glass pointer-events-auto flex items-center gap-3 rounded-[var(--radius-lg)] border py-2 pr-2 pl-4">
-        <span class="font-mono text-[0.72rem] text-text-muted">
-          <span class={selectedIds.length > 0 ? "text-text-primary" : undefined}>{selectedIds.length}</span> selected
-        </span>
-        <Button
-          variant="primary"
-          disabled={selectedIds.length === 0 || store.bulkStarting}
-          onclick={handleBulkQueue}
-        >
-          {#if store.bulkStarting}<Loader2 class="animate-spin" aria-hidden="true" />{:else}<Sparkles aria-hidden="true" />{/if}
-          Identify {selectedIds.length > 0 ? selectedIds.length : ""} with {activeProvider.name}
-        </Button>
-      </div>
-    </div>
+    >
+      {#snippet bulkBarActions()}
+        {#if activeProvider}
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={selectedIds.length === 0 || store.bulkStarting}
+            onclick={handleBulkQueue}
+          >
+            {#if store.bulkStarting}<Loader2 class="animate-spin" aria-hidden="true" />{:else}<Sparkles aria-hidden="true" />{/if}
+            Identify {selectedIds.length} with {activeProvider.name}
+          </Button>
+        {/if}
+      {/snippet}
+    </EntityGrid>
   {/if}
 </div>

@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { createRawSnippet } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import BulkSelectionBar from "./BulkSelectionBar.svelte";
 
@@ -18,7 +19,6 @@ describe("BulkSelectionBar", () => {
       onSelectAllVisible: vi.fn(),
       selectedCount: 1,
       selectedIds: ["wanted"],
-      showSelectionToggle: false,
     });
 
     expect(screen.queryByRole("button", { name: "Bulk actions" })).toBeNull();
@@ -34,7 +34,6 @@ describe("BulkSelectionBar", () => {
       onSelectAllVisible: vi.fn(),
       selectedCount: 1,
       selectedIds: ["on-disk"],
-      showSelectionToggle: false,
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Bulk actions" }));
@@ -68,5 +67,22 @@ describe("BulkSelectionBar", () => {
     expect(screen.getByRole("button", { name: "Select all" })).toHaveClass("inline-flex");
     expect(screen.getByRole("button", { name: "Clear" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Bulk actions" })).not.toBeInTheDocument();
+  });
+
+  it("renders host actions after the built-in ones only while something is selected", async () => {
+    const children = createRawSnippet(() => ({ render: () => "<button>Identify 2 with TMDB</button>" }));
+    const view = render(BulkSelectionBar, {
+      children,
+      onClearSelection: vi.fn(), onSelectAllVisible: vi.fn(),
+      selectedCount: 2, selectedIds: ["a", "b"], variant: "floating",
+    });
+    const bar = screen.getByRole("status", { name: "Selection actions" });
+    expect(bar).toHaveClass("floating-bar");
+    expect(bar).toHaveTextContent("2 selected");
+    expect(screen.getByRole("button", { name: "Identify 2 with TMDB" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Select" })).not.toBeInTheDocument();
+
+    await view.rerender({ selectedCount: 0, selectedIds: [] });
+    expect(screen.queryByRole("button", { name: "Identify 2 with TMDB" })).not.toBeInTheDocument();
   });
 });

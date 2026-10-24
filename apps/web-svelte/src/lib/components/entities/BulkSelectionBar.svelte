@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { BellOff, CheckCheck, EllipsisVertical, Flame, ListChecks, X } from "@lucide/svelte";
+  import type { Snippet } from "svelte";
+  import { BellOff, CheckCheck, EllipsisVertical, Flame, X } from "@lucide/svelte";
   import { cubicOut } from "svelte/easing";
   import { slide } from "svelte/transition";
   import { Button, buttonVariants, cn, DropdownMenu, Separator } from "@prismedia/ui-svelte";
@@ -14,19 +15,21 @@
     /** Removes the selected wanted placeholders (delete + discovery blacklist; a direct re-request restores). */
     onRemoveWanted?: () => void;
     bulkActions?: EntityGridBulkAction[];
+    /** Host-specific primary actions rendered after the built-in ones, e.g. Identify's queue button. */
+    children?: Snippet;
     class?: string;
     collectionItems?: { entityType: CollectionEntityType; entityId: string }[];
     onClearSelection: () => void;
     onSelectAllVisible: () => void;
-    onSelectionActiveChange?: (active: boolean) => void;
     onToggleNsfwFlag?: (markNsfw: boolean) => void;
     selectedCount: number;
     selectedIds: string[];
-    selectionActive?: boolean;
     showNsfwAction?: boolean;
-    showSelectionToggle?: boolean;
-    tuckedAfterPrevious?: boolean;
-    variant?: "toolbar" | "track-list";
+    /**
+     * `floating` is the frosted bar an EntityGrid docks at the bottom of the viewport while a
+     * selection exists; `track-list` is the inline row under an album's track list header.
+     */
+    variant?: "floating" | "track-list";
   }
 
   let {
@@ -34,19 +37,16 @@
     allSelectedWanted = false,
     onRemoveWanted,
     bulkActions = [],
+    children,
     class: className = "",
     collectionItems = [],
     onClearSelection,
     onSelectAllVisible,
-    onSelectionActiveChange,
     onToggleNsfwFlag,
     selectedCount,
     selectedIds,
-    selectionActive = true,
     showNsfwAction = true,
-    showSelectionToggle = true,
-    tuckedAfterPrevious = false,
-    variant = "toolbar",
+    variant = "track-list",
   }: Props = $props();
 
   const canToggleNsfw = $derived(showNsfwAction && typeof onToggleNsfwFlag === "function");
@@ -54,135 +54,119 @@
   const availableBulkActions = $derived(
     bulkActions.filter((action) => action.isAvailable?.(selectedIds) ?? true),
   );
+
+  // The floating bar's host owns its enter/leave motion, so only the inline row slides here.
+  function rowTransition(node: Element) {
+    return variant === "track-list" ? slide(node, { duration: 200, easing: cubicOut }) : {};
+  }
 </script>
 
 <div
   class={cn(
     "bulk-bar",
-    variant === "toolbar" && "toolbar-bar",
+    variant === "floating" && "floating-bar app-glass",
     variant === "track-list" && "track-list-bar",
-    tuckedAfterPrevious && "is-tucked-after-previous",
     className,
   )}
   role="status"
   aria-live="polite"
-  transition:slide={{ duration: 200, easing: cubicOut }}
+  aria-label="Selection actions"
+  transition:rowTransition
 >
-  {#if showSelectionToggle}
+  <span class="bulk-count">{selectedCount} selected</span>
+
+  <div class="bulk-controls">
     <Button
-      variant={selectionActive ? "secondary" : "ghost"}
+      variant="ghost"
       size="sm"
-      aria-label={selectionActive ? "Done" : "Select"}
-      aria-pressed={selectionActive}
-      title={selectionActive ? "Exit selection" : "Select items"}
-      onclick={() => onSelectionActiveChange?.(!selectionActive)}
+      aria-label="Select all"
+      title="Select all visible"
+      onclick={onSelectAllVisible}
     >
-      {#if selectionActive}
-        <X class="h-3.5 w-3.5" />
-        <span class="bulk-btn-label">Done</span>
-      {:else}
-        <ListChecks class="h-3.5 w-3.5" />
-        <span class="bulk-btn-label">Select</span>
-      {/if}
+      <CheckCheck class="h-3.5 w-3.5" />
+      <span class="bulk-btn-label">Select all</span>
     </Button>
-  {/if}
+    <Button
+      variant="ghost"
+      size="sm"
+      aria-label="Clear"
+      title="Clear selection"
+      disabled={selectedCount === 0}
+      onclick={onClearSelection}
+    >
+      <X class="h-3.5 w-3.5" />
+      <span class="bulk-btn-label">Clear</span>
+    </Button>
 
-  {#if selectionActive || !showSelectionToggle}
-    <span class="bulk-count">{selectedCount} selected</span>
-
-    <div class="bulk-controls">
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-label="Select all"
-        title="Select all visible"
-        onclick={onSelectAllVisible}
-      >
-        <CheckCheck class="h-3.5 w-3.5" />
-        <span class="bulk-btn-label">Select all</span>
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-label="Clear"
-        title="Clear selection"
-        disabled={selectedCount === 0}
-        onclick={onClearSelection}
-      >
-        <X class="h-3.5 w-3.5" />
-        <span class="bulk-btn-label">Clear</span>
-      </Button>
-
-      {#if selectedCount > 0}
-        {#if canToggleNsfw}
-          <Separator orientation="vertical" class="mx-0.5 h-4" />
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={allSelectedNsfw ? "Mark SFW" : "Mark NSFW"}
-            title={allSelectedNsfw ? "Mark SFW" : "Mark NSFW"}
-            onclick={() => onToggleNsfwFlag?.(!allSelectedNsfw)}
-          >
-            <Flame class="h-3.5 w-3.5" />
-            <span class="bulk-btn-label">{allSelectedNsfw ? "Mark SFW" : "Mark NSFW"}</span>
-          </Button>
-        {/if}
-
-        {#if canRemoveWanted}
-          <Separator orientation="vertical" class="mx-0.5 h-4" />
-          <Button
-            variant="danger"
-            size="sm"
-            aria-label="Remove wanted"
-            title="Remove from Wanted — deletes these placeholders and keeps them out of future discovery; requesting one again brings it back"
-            onclick={() => onRemoveWanted?.()}
-          >
-            <BellOff class="h-3.5 w-3.5" />
-            <span class="bulk-btn-label">Remove wanted</span>
-          </Button>
-        {/if}
-
-        {#if collectionItems.length > 0}
-          <AddToCollectionMenu items={collectionItems} />
-        {/if}
-
-        {#if availableBulkActions.length > 0}
-          <Separator orientation="vertical" class="mx-0.5 h-4" />
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger
-              class={buttonVariants({ variant: "secondary", size: "sm" })}
-              title="Actions"
-              aria-label="Bulk actions"
-            >
-              <EllipsisVertical class="h-3.5 w-3.5" />
-              <span class="bulk-btn-label">Actions</span>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Content align="end" aria-label="Bulk actions">
-              <DropdownMenu.Group>
-                {#each availableBulkActions as action (action.id)}
-                  <DropdownMenu.Item
-                    variant={action.tone === "danger" ? "destructive" : "default"}
-                    onSelect={() => action.onRun(selectedIds)}
-                  >
-                    {action.label}
-                  </DropdownMenu.Item>
-                {/each}
-              </DropdownMenu.Group>
-            </DropdownMenu.Content>
-          </DropdownMenu.Root>
-        {/if}
+    {#if selectedCount > 0}
+      {#if canToggleNsfw}
+        <Separator orientation="vertical" class="mx-0.5 h-4" />
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={allSelectedNsfw ? "Mark SFW" : "Mark NSFW"}
+          title={allSelectedNsfw ? "Mark SFW" : "Mark NSFW"}
+          onclick={() => onToggleNsfwFlag?.(!allSelectedNsfw)}
+        >
+          <Flame class="h-3.5 w-3.5" />
+          <span class="bulk-btn-label">{allSelectedNsfw ? "Mark SFW" : "Mark NSFW"}</span>
+        </Button>
       {/if}
-    </div>
-  {/if}
+
+      {#if canRemoveWanted}
+        <Separator orientation="vertical" class="mx-0.5 h-4" />
+        <Button
+          variant="danger"
+          size="sm"
+          aria-label="Remove wanted"
+          title="Remove from Wanted — deletes these placeholders and keeps them out of future discovery; requesting one again brings it back"
+          onclick={() => onRemoveWanted?.()}
+        >
+          <BellOff class="h-3.5 w-3.5" />
+          <span class="bulk-btn-label">Remove wanted</span>
+        </Button>
+      {/if}
+
+      {#if collectionItems.length > 0}
+        <AddToCollectionMenu items={collectionItems} />
+      {/if}
+
+      {#if availableBulkActions.length > 0}
+        <Separator orientation="vertical" class="mx-0.5 h-4" />
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger
+            class={buttonVariants({ variant: "secondary", size: "sm" })}
+            title="Actions"
+            aria-label="Bulk actions"
+          >
+            <EllipsisVertical class="h-3.5 w-3.5" />
+            <span class="bulk-btn-label">Actions</span>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Content align="end" aria-label="Bulk actions">
+            <DropdownMenu.Group>
+              {#each availableBulkActions as action (action.id)}
+                <DropdownMenu.Item
+                  variant={action.tone === "danger" ? "destructive" : "default"}
+                  onSelect={() => action.onRun(selectedIds)}
+                >
+                  {action.label}
+                </DropdownMenu.Item>
+              {/each}
+            </DropdownMenu.Group>
+          </DropdownMenu.Content>
+        </DropdownMenu.Root>
+      {/if}
+
+      {#if children}
+        <Separator orientation="vertical" class="mx-0.5 h-4" />
+        {@render children()}
+      {/if}
+    {/if}
+  </div>
 </div>
 
 <style>
   .bulk-bar {
-    --toolbar-detail-border: var(--color-border, #1c2235);
-    --toolbar-detail-glass: rgb(12 15 21);
-    --toolbar-detail-slideout-inset: 5px;
-    --toolbar-bar-overlap: 0.5rem;
-
     position: relative;
     z-index: 1;
     display: flex;
@@ -196,20 +180,13 @@
     pointer-events: auto;
   }
 
-  .toolbar-bar {
-    margin-inline: var(--toolbar-detail-slideout-inset);
-    margin-top: calc(-1 * var(--toolbar-bar-overlap));
-    border: 1px solid var(--toolbar-detail-border);
-    border-top: 0;
-    border-radius: 0 0 var(--radius-md, 10px) var(--radius-md, 10px);
-    background: var(--toolbar-detail-glass);
-    padding: calc(0.6rem + var(--toolbar-bar-overlap)) 0.85rem 0.6rem;
-  }
-
-  .toolbar-bar.is-tucked-after-previous {
-    z-index: 0;
-    margin-top: calc(-1 * var(--toolbar-bar-overlap));
-    padding-top: calc(0.6rem + var(--toolbar-bar-overlap));
+  /* Frosted floating control: sized to its actions, never wider than the grid it serves. */
+  .floating-bar {
+    max-width: 100%;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-lg, 12px);
+    padding: 0.4rem 0.45rem 0.4rem 0.9rem;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.07), 0 18px 48px rgb(0 0 0 / 0.55);
   }
 
   .track-list-bar {

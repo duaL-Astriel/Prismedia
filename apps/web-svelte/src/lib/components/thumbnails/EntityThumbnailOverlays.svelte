@@ -48,4 +48,6 @@
   .selection { position: absolute; z-index: 6; top: calc(var(--spacing) * 2); left: calc(var(--spacing) * 2); width: var(--spacing-control-xs); height: var(--spacing-control-xs); border-radius: var(--radius-xs); background: var(--color-surface-1); opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
   :global(.entity-thumbnail:is(:hover, :focus-within)) .selection, :global(.entity-thumbnail.is-select-mode) .selection, :global(.entity-thumbnail.is-selected) .selection, .selection:focus-within { opacity: 1; pointer-events: auto; }
   :global(.entity-thumbnail.is-list) .selection { opacity: 1; pointer-events: auto; }
+  /* Touch screens have no hover to reveal the checkbox, so selection must not depend on it there. */
+  @media (hover: none) { .selection { opacity: 1; pointer-events: auto; } }
 </style>

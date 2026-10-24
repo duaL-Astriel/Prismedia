@@ -1,6 +1,8 @@
 <script lang="ts">
   import { browser } from "$app/environment";
   import { onMount, type Snippet } from "svelte";
+  import { cubicOut } from "svelte/easing";
+  import { fly } from "svelte/transition";
   import { SvelteMap } from "svelte/reactivity";
   import { isNsfw, isWanted, withFlagCapability } from "$lib/api/capabilities";
   import { removeWantedEntities } from "$lib/api/requests";
@@ -23,6 +25,7 @@
   } from "$lib/entities/entity-grid";
   import type { EntityThumbnailCard } from "$lib/entities/entity-thumbnail";
   import { isCollectionEntityType, type CollectionEntityType } from "$lib/collections/models";
+  import BulkSelectionBar from "./BulkSelectionBar.svelte";
   import EntityGridFilterDrawer from "./EntityGridFilterDrawer.svelte";
   import EntityGridContent from "./EntityGridContent.svelte";
   import EntityGridPagination from "./EntityGridPagination.svelte";
@@ -49,6 +52,11 @@
 
   interface Props {
     bulkActions?: EntityGridBulkAction[];
+    /**
+     * Host-specific primary actions shown at the end of the floating selection bar, for flows whose
+     * main job is acting on the selection (e.g. Identify's queue button).
+     */
+    bulkBarActions?: Snippet;
     /**
      * Whether the selection bar offers the library-wide built-in bulk actions (Add to Collection, Mark
      * NSFW). Disable for non-library grids (e.g. the request queue of synthetic entities) so only the
@@ -108,14 +116,18 @@
     scrollBottomPadding?: number;
     scrollMaxHeight?: string | null | undefined;
     scrollMinHeight?: number;
-    /** Start with selection mode enabled so a plain card click toggles selection. */
-    initialSelectionActive?: boolean;
+    /**
+     * Keep the grid in selection mode even with nothing selected: every card shows its checkbox and a
+     * plain card click toggles selection. Other grids enter that mode only while a selection exists.
+     */
+    selectionMode?: boolean;
     /** When false, cards render as non-link surfaces unless an explicit activation handler is provided. */
     cardLinks?: boolean;
   }
 
   let {
     bulkActions = [],
+    bulkBarActions,
     bulkLibraryActions = true,
     cards,
     cardAction,
@@ -150,7 +162,7 @@
     scrollBottomPadding = 24,
     scrollMaxHeight = undefined,
     scrollMinHeight = 320,
-    initialSelectionActive = false,
+    selectionMode = false,
     cardLinks = true,
   }: Props = $props();
 
@@ -203,11 +215,6 @@
   // svelte-ignore state_referenced_locally
   let mediaWall = $state(persistedPrefs?.mediaWall ?? initialMediaWall);
   let selectedIds = $state<string[]>([]);
-  // Selection is explicit by default: until the user turns it on, cards behave as plain links/activators
-  // (a single tap navigates). Some focused flows, such as Identify's batch picker, start in selection
-  // mode and turn the whole card surface into the checkbox.
-  // svelte-ignore state_referenced_locally
-  let selectionActive = $state(initialSelectionActive);
   // svelte-ignore state_referenced_locally
   let sortBy = $state<EntityGridSort>(persistedPrefs?.sortBy ?? initialSortBy);
   // svelte-ignore state_referenced_locally
@@ -221,7 +228,7 @@
   let viewMode = $state<EntityGridViewMode>(
     persistedPrefs?.viewMode === "feed" && !enableFeedView ? "grid" : (persistedPrefs?.viewMode ?? "grid"),
   );
-  // Manual collapse of the secondary toolbar rows, persisted per grid like the
+  // Manual collapse of the active-filter toolbar row, persisted per grid like the
   // rest of the view state. Scroll-driven collapse is handled inside the toolbar
   // and never written here.
   let barsCollapsed = $state(persistedPrefs?.barsCollapsed ?? false);
@@ -277,6 +284,11 @@
     onNavigate: viewport.scrollPageToTop,
   });
   const selectedCount = $derived(selectedIds.length);
+  // Until something is selected, cards behave as plain links/activators and reveal their checkbox on
+  // hover. The first selection switches every card into selection mode (visible checkbox, click
+  // toggles) until the selection is cleared again. Focused flows such as Identify's batch picker stay
+  // in that mode permanently.
+  const selectMode = $derived(selectable && (selectionMode || selectedCount > 0));
   const selectedCards = $derived(
     selectedCount > 0
       ? effectiveCards.filter((c) => selectedIds.includes(c.entity.id))
@@ -548,14 +560,6 @@
     onSelectionChange?.(selectedIds);
   }
 
-  function setSelectionActive(active: boolean) {
-    selectionActive = active;
-    if (!active && selectedIds.length > 0) {
-      selectedIds = [];
-      onSelectionChange?.(selectedIds);
-    }
-  }
-
   function selectAllVisible() {
     selectedIds = visibleCards.map((c) => c.entity.id);
     onSelectionChange?.(selectedIds);
@@ -634,13 +638,7 @@
   <EntityGridToolbar
     activeFilterIds={filterIds}
     {activePresetId}
-    {allSelectedNsfw}
-    {allSelectedWanted}
-    onRemoveWanted={removeWantedSelection}
     {barsCollapsed}
-    {bulkActions}
-    collectionItems={bulkLibraryActions ? collectionItems : []}
-    showNsfwAction={bulkLibraryActions}
     {canClearFilters}
     {enableFeedView}
     {drawerOpen}
@@ -653,28 +651,20 @@
     onApplyPreset={applyPreset}
     onBarsCollapsedChange={(collapsed) => (barsCollapsed = collapsed)}
     onClearFilters={clearFilters}
-    onClearSelection={clearSelection}
     onDeletePreset={deletePreset}
     onDrawerOpenChange={(open) => (drawerOpen = open)}
     onMediaWallChange={setMediaWall}
     onOverwritePreset={overwritePreset}
     onQueryChange={setQuery}
-    onSelectAllVisible={selectAllVisible}
-    onSelectionActiveChange={setSelectionActive}
     onSavePreset={savePreset}
     onScaleChange={persistScale}
     onSortByChange={setSortBy}
     onSortDirChange={setSortDir}
-    onToggleNsfwFlag={toggleNsfwFlag}
     onReshuffle={reshuffle}
     onViewModeChange={setViewMode}
     {presets}
     {query}
     {scale}
-    {selectable}
-    {selectedCount}
-    {selectedIds}
-    {selectionActive}
     {sortBy}
     {sortDir}
     {viewMode}
@@ -726,7 +716,7 @@
       onCardSelectedChange={updateSelection}
       {selectable}
       {selectedIds}
-      {selectionActive}
+      {selectMode}
       {viewMode}
     />
   </div>
@@ -755,6 +745,26 @@
       readoutPlaceholderWidth={pagination.readoutPlaceholderWidth}
       totalIsExact={pagination.totalIsExact}
     />
+  {/if}
+
+  {#if selectable && selectedCount > 0}
+    <div class="bulk-dock" transition:fly={{ y: 16, duration: 180, easing: cubicOut }}>
+      <BulkSelectionBar
+        {allSelectedNsfw}
+        {allSelectedWanted}
+        onRemoveWanted={removeWantedSelection}
+        {bulkActions}
+        collectionItems={bulkLibraryActions ? collectionItems : []}
+        onClearSelection={clearSelection}
+        onSelectAllVisible={selectAllVisible}
+        onToggleNsfwFlag={toggleNsfwFlag}
+        showNsfwAction={bulkLibraryActions}
+        {selectedCount}
+        {selectedIds}
+        variant="floating"
+        children={bulkBarActions}
+      />
+    </div>
   {/if}
 </section>
 
@@ -831,6 +841,23 @@
    */
   .grid-viewport.is-contained {
     min-height: 0;
+  }
+
+  /*
+   * The selection bar docks to the bottom of the scroll viewport while the grid is on screen, clearing
+   * the floating player when one is open, and settles after the pagination at the end of the grid.
+   */
+  .bulk-dock {
+    position: sticky;
+    bottom: calc(var(--prismedia-bottom-dock-padding, 0px) + 1rem);
+    z-index: 30;
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+  }
+
+  .bulk-dock > :global(.bulk-bar) {
+    pointer-events: auto;
   }
 
   .entity-grid.is-static :global(.toolbar-shell) {
