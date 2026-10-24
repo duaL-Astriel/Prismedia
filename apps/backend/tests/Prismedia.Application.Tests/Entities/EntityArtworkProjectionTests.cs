@@ -105,4 +105,43 @@ public sealed class EntityArtworkProjectionTests {
 
         Assert.Equal("/videos/acme_movie.jpg", projection.CoverUrl);
     }
+
+    [Fact]
+    public void GalleryChildWithOnlySourceFile_NeverExposesFilesystemPath() {
+        var gallery = new Gallery(Guid.NewGuid(), "Holiday Trip", GalleryType.Folder, coverImageId: null);
+        var image = new Image(Guid.NewGuid(), "Raw");
+        image.AttachFile(EntityFileRole.Source, "/media/library/raw.jpg");
+        gallery.AddChild(image, sortOrder: 1);
+
+        var projection = EntityArtworkProjection.Project(gallery);
+
+        Assert.Null(projection.CoverUrl);
+        Assert.Null(projection.ThumbnailUrl);
+    }
+
+    [Fact]
+    public void GalleryChildWithGeneratedThumbnail_ProjectsServableUrl() {
+        var gallery = new Gallery(Guid.NewGuid(), "Holiday Trip", GalleryType.Folder, coverImageId: null);
+        var image = new Image(Guid.NewGuid(), "Raw");
+        image.AttachFile(EntityFileRole.Source, "/media/library/raw.jpg");
+        image.AttachFile(EntityFileRole.Thumbnail, "/assets/images/raw/thumb.jpg");
+        gallery.AddChild(image, sortOrder: 1);
+
+        var projection = EntityArtworkProjection.Project(gallery);
+
+        Assert.Equal("/assets/images/raw/thumb.jpg", projection.CoverUrl);
+    }
+
+    [Fact]
+    public void PersonLinkedMediaWithOnlySourceFile_NeverExposesFilesystemPath() {
+        var person = new Person(Guid.NewGuid(), "Actor Alice");
+        var video = new Video(Guid.NewGuid(), "Sample Video");
+        video.AttachFile(EntityFileRole.Source, "/media/library/video.mp4");
+        person.AddRelationship(video);
+
+        var projection = EntityArtworkProjection.Project(person);
+
+        Assert.Null(projection.CoverUrl);
+        Assert.Null(projection.ThumbnailUrl);
+    }
 }

@@ -221,6 +221,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- Gallery, person, tag, and studio cards without their own artwork no longer show a broken image or a local file path when the fallback media has no generated thumbnail; they show the placeholder instead. Setting an image as a cover now copies it into the served artwork cache.
+
 - Video and audio playback volume and muted states are remembered in client storage across media changes, page reloads, and player transitions instead of resetting to 100%.
 
 - Installed plugins and Stash community scrapers remain available and discoverable when run from a relocated workspace or container whose recorded file paths point to a different absolute path.

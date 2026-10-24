@@ -82,7 +82,7 @@ public sealed class SetEntityCoverServiceTests {
         await db.SaveChangesAsync();
 
         var thumbnailService = new TestGridThumbnailService();
-        var service = new SetEntityCoverService(db, thumbnailService);
+        var service = new SetEntityCoverService(db, new EntityImageAssetStorageOptions(Path.GetTempPath()), thumbnailService);
 
         var result = await service.SetCoverAsync(new SetEntityCoverCommand(galleryId, imageId), CancellationToken.None);
 
@@ -144,7 +144,7 @@ public sealed class SetEntityCoverServiceTests {
         await db.SaveChangesAsync();
 
         var thumbnailService = new TestGridThumbnailService();
-        var service = new SetEntityCoverService(db, thumbnailService);
+        var service = new SetEntityCoverService(db, new EntityImageAssetStorageOptions(Path.GetTempPath()), thumbnailService);
 
         var result = await service.SetCoverAsync(new SetEntityCoverCommand(personId, videoId), CancellationToken.None);
 
@@ -169,7 +169,7 @@ public sealed class SetEntityCoverServiceTests {
 
         await using var db = new PrismediaDbContext(options);
         var thumbnailService = new TestGridThumbnailService();
-        var service = new SetEntityCoverService(db, thumbnailService);
+        var service = new SetEntityCoverService(db, new EntityImageAssetStorageOptions(Path.GetTempPath()), thumbnailService);
 
         var result = await service.SetCoverAsync(new SetEntityCoverCommand(Guid.NewGuid(), Guid.NewGuid()), CancellationToken.None);
 
@@ -195,7 +195,7 @@ public sealed class SetEntityCoverServiceTests {
         await db.SaveChangesAsync();
 
         var thumbnailService = new TestGridThumbnailService();
-        var service = new SetEntityCoverService(db, thumbnailService);
+        var service = new SetEntityCoverService(db, new EntityImageAssetStorageOptions(Path.GetTempPath()), thumbnailService);
 
         var result = await service.SetCoverAsync(new SetEntityCoverCommand(personId, Guid.NewGuid()), CancellationToken.None);
 
@@ -232,10 +232,72 @@ public sealed class SetEntityCoverServiceTests {
         await db.SaveChangesAsync();
 
         var thumbnailService = new TestGridThumbnailService();
-        var service = new SetEntityCoverService(db, thumbnailService);
+        var service = new SetEntityCoverService(db, new EntityImageAssetStorageOptions(Path.GetTempPath()), thumbnailService);
 
         var result = await service.SetCoverAsync(new SetEntityCoverCommand(personId, videoId), CancellationToken.None);
 
         Assert.Equal(SetEntityCoverResult.NoCoverAvailable, result);
+    }
+
+    [Fact]
+    public async Task SetCover_FromSourceImage_CopiesFileIntoServedArtworkCache() {
+        var cacheRoot = Path.Combine(Path.GetTempPath(), "prismedia-cover-" + Guid.NewGuid());
+        var sourceDir = Path.Combine(Path.GetTempPath(), "prismedia-src-" + Guid.NewGuid());
+        Directory.CreateDirectory(sourceDir);
+        var sourcePath = Path.Combine(sourceDir, "photo.jpg");
+        await File.WriteAllBytesAsync(sourcePath, [1, 2, 3, 4]);
+        try {
+            var options = new DbContextOptionsBuilder<PrismediaDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            await using var db = new PrismediaDbContext(options);
+            var personId = Guid.NewGuid();
+            var imageId = Guid.NewGuid();
+            var now = DateTimeOffset.UtcNow;
+            db.Entities.Add(new EntityRow { Id = personId, KindCode = EntityKind.Person.ToCode(), Title = "Jane", CreatedAt = now, UpdatedAt = now });
+            db.Entities.Add(new EntityRow { Id = imageId, KindCode = EntityKind.Image.ToCode(), Title = "Photo", CreatedAt = now, UpdatedAt = now });
+            db.EntityFiles.Add(new EntityFileRow {
+                Id = Guid.NewGuid(), EntityId = imageId, Role = EntityFileRole.Source, Path = sourcePath,
+                Source = FileSourceKind.Scan.ToCode(), CreatedAt = now, UpdatedAt = now
+            });
+            await db.SaveChangesAsync();
+
+            var service = new SetEntityCoverService(db, new EntityImageAssetStorageOptions(cacheRoot), new TestGridThumbnailService());
+            var result = await service.SetCoverAsync(new SetEntityCoverCommand(personId, imageId), CancellationToken.None);
+
+            Assert.Equal(SetEntityCoverResult.Updated, result);
+            var cover = await db.EntityFiles.SingleAsync(f => f.EntityId == personId && f.Role == EntityFileRole.Cover);
+            Assert.StartsWith("/assets/custom/artwork/" + personId + "/", cover.Path);
+            Assert.NotEqual(sourcePath, cover.Path);
+            Assert.Equal("image/jpeg", cover.MimeType);
+            Assert.True(File.Exists(Path.Combine(cacheRoot, cover.Path.TrimStart('/').Substring("assets/".Length))));
+        } finally {
+            Directory.Delete(sourceDir, recursive: true);
+            if (Directory.Exists(cacheRoot)) Directory.Delete(cacheRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SetCover_FromSourceImageMissingOnDisk_ReturnsNoCoverAvailable() {
+        var options = new DbContextOptionsBuilder<PrismediaDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new PrismediaDbContext(options);
+        var personId = Guid.NewGuid();
+        var imageId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        db.Entities.Add(new EntityRow { Id = personId, KindCode = EntityKind.Person.ToCode(), Title = "Jane", CreatedAt = now, UpdatedAt = now });
+        db.Entities.Add(new EntityRow { Id = imageId, KindCode = EntityKind.Image.ToCode(), Title = "Photo", CreatedAt = now, UpdatedAt = now });
+        db.EntityFiles.Add(new EntityFileRow {
+            Id = Guid.NewGuid(), EntityId = imageId, Role = EntityFileRole.Source, Path = "/nonexistent/photo.jpg",
+            Source = FileSourceKind.Scan.ToCode(), CreatedAt = now, UpdatedAt = now
+        });
+        await db.SaveChangesAsync();
+
+        var service = new SetEntityCoverService(db, new EntityImageAssetStorageOptions(Path.GetTempPath()), new TestGridThumbnailService());
+        var result = await service.SetCoverAsync(new SetEntityCoverCommand(personId, imageId), CancellationToken.None);
+
+        Assert.Equal(SetEntityCoverResult.NoCoverAvailable, result);
+        Assert.DoesNotContain(db.EntityFiles, f => f.EntityId == personId);
     }
 }

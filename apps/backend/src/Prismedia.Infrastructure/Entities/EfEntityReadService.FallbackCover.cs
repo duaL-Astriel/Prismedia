@@ -43,13 +43,10 @@ public sealed partial class EfEntityReadService {
                         Capabilities = WithImageCoverFallback(card.Capabilities, coverUrl)
                     };
                 }
-                var sourcePath = await _db.EntityFiles.AsNoTracking()
-                    .Where(f => f.EntityId == childId && f.Role == EntityFileRole.Source)
-                    .Select(f => f.Path)
-                    .FirstOrDefaultAsync(cancellationToken);
-                if (sourcePath is not null) {
+                var generatedUrl = await LoadGeneratedThumbnailPathAsync(childId, cancellationToken);
+                if (generatedUrl is not null) {
                     return card with {
-                        Capabilities = WithImageCoverFallback(card.Capabilities, sourcePath)
+                        Capabilities = WithImageCoverFallback(card.Capabilities, generatedUrl)
                     };
                 }
             }
@@ -89,13 +86,10 @@ public sealed partial class EfEntityReadService {
                             Capabilities = WithImageCoverFallback(card.Capabilities, coverUrl)
                         };
                     }
-                    var sourcePath = await _db.EntityFiles.AsNoTracking()
-                        .Where(f => f.EntityId == chosenMediaId && f.Role == EntityFileRole.Source)
-                        .Select(f => f.Path)
-                        .FirstOrDefaultAsync(cancellationToken);
-                    if (sourcePath is not null) {
+                    var generatedUrl = await LoadGeneratedThumbnailPathAsync(chosenMediaId, cancellationToken);
+                    if (generatedUrl is not null) {
                         return card with {
-                            Capabilities = WithImageCoverFallback(card.Capabilities, sourcePath)
+                            Capabilities = WithImageCoverFallback(card.Capabilities, generatedUrl)
                         };
                     }
                 }
@@ -103,6 +97,20 @@ public sealed partial class EfEntityReadService {
         }
 
         return card;
+    }
+
+    /// <summary>
+    /// Loads the generated grid thumbnail URL for an entity with no explicit artwork. Only
+    /// cache-served variants qualify; the entity's Source file is a library path the client
+    /// cannot load and is never returned.
+    /// </summary>
+    private async Task<string?> LoadGeneratedThumbnailPathAsync(Guid id, CancellationToken cancellationToken) {
+        var files = await _db.EntityFiles.AsNoTracking()
+            .Where(f => f.EntityId == id &&
+                (f.Role == EntityFileRole.GridThumbnail2x || f.Role == EntityFileRole.GridThumbnail))
+            .ToArrayAsync(cancellationToken);
+        return (files.FirstOrDefault(f => f.Role == EntityFileRole.GridThumbnail2x)
+            ?? files.FirstOrDefault(f => f.Role == EntityFileRole.GridThumbnail))?.Path;
     }
 
     private async Task<IReadOnlyDictionary<Guid, (string Path, Guid EntityId)>> ProjectTaxonomyArtworkAsync(
