@@ -35,8 +35,7 @@ internal static class EntityArtworkProjection {
                 if (coverChild is not null) {
                     var childArtwork = Project(coverChild);
                     originalCoverUrl = childArtwork.CoverUrl
-                        ?? childArtwork.ThumbnailUrl
-                        ?? coverChild.EntityFiles.FirstOrDefault(file => file.Role == EntityFileRole.Source)?.Path;
+                        ?? childArtwork.ThumbnailUrl;
                     fallbackThumbnailUrl = childArtwork.ThumbnailUrl ?? childArtwork.CoverUrl ?? originalCoverUrl;
                     fallbackThumbnail2xUrl = childArtwork.Thumbnail2xUrl;
                 }
@@ -45,8 +44,7 @@ internal static class EntityArtworkProjection {
                 if (linkedMedia is not null) {
                     var mediaArtwork = Project(linkedMedia);
                     originalCoverUrl = mediaArtwork.CoverUrl
-                        ?? mediaArtwork.ThumbnailUrl
-                        ?? linkedMedia.EntityFiles.FirstOrDefault(file => file.Role == EntityFileRole.Source)?.Path;
+                        ?? mediaArtwork.ThumbnailUrl;
                     fallbackThumbnailUrl = mediaArtwork.ThumbnailUrl ?? mediaArtwork.CoverUrl ?? originalCoverUrl;
                     fallbackThumbnail2xUrl = mediaArtwork.Thumbnail2xUrl;
                 }
