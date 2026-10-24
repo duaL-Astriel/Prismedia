@@ -135,8 +135,8 @@
         <Button
           variant="ghost"
           size="icon-sm"
-          title={barsCollapsed ? "Show filter and selection rows" : "Hide filter and selection rows"}
-          aria-label={barsCollapsed ? "Show filter and selection rows" : "Hide filter and selection rows"}
+          title={barsCollapsed ? "Show filter row" : "Hide filter row"}
+          aria-label={barsCollapsed ? "Show filter row" : "Hide filter row"}
           aria-expanded={!barsCollapsed}
           onclick={onToggleCollapse}
         >

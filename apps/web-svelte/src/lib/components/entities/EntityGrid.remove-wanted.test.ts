@@ -31,7 +31,6 @@ describe("EntityGrid wanted removal", () => {
       props: {
         cards: [wantedCard("wanted-1", "Wanted One"), wantedCard("wanted-2", "Wanted Two")],
         dockControls: false,
-        initialSelectionActive: true,
         onSelectionChange,
         showPagination: false,
       },

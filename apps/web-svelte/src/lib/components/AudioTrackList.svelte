@@ -180,7 +180,6 @@
         selectedCount={selectedCount}
         selectedIds={visibleSelectedIds}
         showNsfwAction={false}
-        showSelectionToggle={false}
         variant="track-list"
       />
     {/if}
