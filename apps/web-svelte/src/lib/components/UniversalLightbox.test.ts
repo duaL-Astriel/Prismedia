@@ -254,6 +254,26 @@ describe("UniversalLightbox", () => {
     ]);
   });
 
+  it("keeps the faded poster from covering the native video controls", async () => {
+    render(UniversalLightboxHarness, {
+      props: { entities: [animatedWithPreview], initialIndex: 0, onClose: vi.fn() },
+    });
+
+    const video = await waitFor(() => {
+      const element = document.querySelector("video.lightbox-native-video");
+      expect(element).toBeInTheDocument();
+      return element as HTMLVideoElement;
+    });
+    await fireEvent.canPlay(video);
+
+    // The poster is absolutely positioned over the in-flow video, so it must stay
+    // hit-test transparent or the browser never delivers hover/clicks to the native
+    // controls once they auto-hide.
+    const poster = document.querySelector(".lightbox-video-poster") as HTMLImageElement;
+    expect(poster).toBeInTheDocument();
+    expect(getComputedStyle(poster).pointerEvents).toBe("none");
+  });
+
   it("uses image-video originals in the full-quality lightbox even without generated previews", async () => {
     render(UniversalLightboxHarness, {
       props: { entities: [animated], initialIndex: 0, onClose: vi.fn() },
