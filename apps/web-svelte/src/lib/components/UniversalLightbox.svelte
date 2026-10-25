@@ -779,6 +779,9 @@
     object-fit: contain;
     opacity: 1;
     transition: opacity 160ms ease;
+    /* The poster stacks above the in-flow video; once faded out it must not swallow
+       the hover and clicks that reveal and drive the native controls. */
+    pointer-events: none;
   }
 
   .lightbox-video-shell :global([data-testid="vidstack-video-player"]) {

@@ -223,6 +223,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- Animated and video images opened in the lightbox keep their playback controls usable: after the controls auto-hide, hovering or tapping the video brings them back instead of leaving them hidden for good.
+
 - Video and audio playback volume and muted states are remembered in client storage across media changes, page reloads, and player transitions instead of resetting to 100%.
 
 - Installed plugins and Stash community scrapers remain available and discoverable when run from a relocated workspace or container whose recorded file paths point to a different absolute path.
