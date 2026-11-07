@@ -8,6 +8,17 @@ namespace Prismedia.Domain.Capabilities;
 /// keep one exact <see cref="ProgressCheckpoint"/> per modality beside it.
 /// </summary>
 public sealed class CapabilityProgress : EntityCapability {
+    #region Static Variables
+
+    /// <summary>
+    /// Largest offset change, in seconds, that still names a recorded time position. A reopened or
+    /// paused player's re-sent offset drifts by seek and rounding error; playback saves, seeks, and the
+    /// listening runway move further than this.
+    /// </summary>
+    public const double RestatedOffsetToleranceSeconds = 2;
+
+    #endregion
+
     #region Variables
 
     private readonly Dictionary<ConsumptionModality, ProgressCheckpoint> _checkpoints = [];
@@ -131,6 +142,27 @@ public sealed class CapabilityProgress : EntityCapability {
     /// </summary>
     public bool IsResumable(ProgressCheckpoint checkpoint) =>
         CompletedAt is not { } completedAt || checkpoint.UpdatedAt > completedAt;
+
+    /// <summary>
+    /// Whether <paramref name="checkpoint"/> only re-sends its modality's recorded time offset: the
+    /// same position Entity at an offset within <see cref="RestatedOffsetToleranceSeconds"/>. A
+    /// player that reopens or stays paused re-sends the spot it already saved; that is not newer
+    /// consumption, so callers keep the recorded checkpoint and its time rather than letting an old
+    /// spot outrank newer progress in another modality.
+    /// </summary>
+    /// <param name="checkpoint">Offset-addressed checkpoint proposed by a report.</param>
+    /// <returns>
+    /// False when <paramref name="checkpoint"/> is not offset-addressed, when its modality has no
+    /// recorded checkpoint, or when the position moved.
+    /// </returns>
+    public bool RestatesRecordedOffset(ProgressCheckpoint checkpoint) {
+        ArgumentNullException.ThrowIfNull(checkpoint);
+        return checkpoint.OffsetSeconds is { } offset &&
+            _checkpoints.TryGetValue(checkpoint.Modality, out var recorded) &&
+            recorded.PositionEntityId == checkpoint.PositionEntityId &&
+            recorded.OffsetSeconds is { } recordedOffset &&
+            Math.Abs(offset - recordedOffset) <= RestatedOffsetToleranceSeconds;
+    }
 
     #endregion
 

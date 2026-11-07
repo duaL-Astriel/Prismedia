@@ -287,8 +287,9 @@ public sealed partial class EntityCapabilityService {
     #region Actions - Listening Reports
 
     /// <summary>
-    /// Records an exact listening position on every heartbeat, whether or not its chapter is paired,
-    /// then places the shared cursor through the work's alignment.
+    /// Records an exact listening position on every heartbeat that moves it, whether or not its
+    /// chapter is paired, then places the shared cursor through the work's alignment. A report that
+    /// only re-sends the recorded position keeps the checkpoint, its time, and the cursor as they were.
     /// </summary>
     private async Task<EntityProgressReportResult> ReportListeningAsync(
         Entity entity,
@@ -337,6 +338,15 @@ public sealed partial class EntityCapabilityService {
             cancellationToken);
         if (MarkIncompleteOnly(report)) {
             return await MarkIncompleteAsync(entity, progress, hasActivity, occurredAt, cancellationToken);
+        }
+        // A reopened or paused player re-sends the spot it already saved. Refreshing that checkpoint
+        // would make the old spot newer than later reading, so Read would reopen there and the reader
+        // would save over the reading position. Completion and start-over still apply.
+        if (!report.Reset && report.Completed != true && progress.RestatesRecordedOffset(checkpoint)) {
+            if (hasActivity) {
+                await SaveProgressStateAsync(entity, cancellationToken);
+            }
+            return EntityProgressReportResult.Applied(entity.Id);
         }
 
         var recorded = progress.TryRecord(checkpoint);
