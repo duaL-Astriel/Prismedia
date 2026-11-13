@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EntityKind } from "$lib/api/generated/model";
 import type { EntityCard } from "$lib/api/entities";
+import { resolveComicBrowseHref } from "$lib/entities/comic-browse-route";
+import { ENTITY_KIND } from "$lib/entities/entity-codes";
 import {
   clearEntityIndexPageCache,
   EntityIndexPageState,
@@ -87,6 +89,39 @@ describe("EntityIndexPageState", () => {
     await state.loadInitial();
 
     expect(state.cards.map((card) => card.href)).toEqual(["/movies/movie-1"]);
+    expect(state.cards.map((card) => card.transitionEntityId)).toEqual(["movie-1"]);
+  });
+
+  it("routes single-release comic series directly to the installment when resolveComicBrowseHref is used", async () => {
+    fetchEntities.mockResolvedValueOnce({
+      items: [
+        entity("series-1", ENTITY_KIND.comicSeries, "One Shot", {
+          singleReleaseEntityId: "issue-1",
+        }),
+        entity("series-2", ENTITY_KIND.comicSeries, "Ongoing", {
+          singleReleaseEntityId: null,
+        }),
+      ],
+      nextCursor: null,
+      totalCount: 2,
+    });
+
+    const state = new EntityIndexPageState({
+      getKind: () => ENTITY_KIND.comicSeries,
+      getHideNsfw: () => false,
+      resolveHref: resolveComicBrowseHref,
+    });
+
+    await state.loadInitial();
+
+    expect(state.cards.map((card) => card.href)).toEqual([
+      "/comics/series-1/installments/issue-1",
+      "/comics/series-2",
+    ]);
+    expect(state.cards.map((card) => card.transitionEntityId)).toEqual([
+      "issue-1",
+      undefined,
+    ]);
   });
 
   it("reloads the first server page when the grid page size changes", async () => {

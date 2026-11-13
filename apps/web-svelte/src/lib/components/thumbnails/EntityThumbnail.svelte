@@ -81,7 +81,7 @@
       return;
     }
     toggleSurfaceSelection();
-    if (effectiveHref && layout === "grid") artworkTransition?.arm(event, card.entity.id);
+    if (effectiveHref && layout === "grid") artworkTransition?.arm(event, card.transitionEntityId ?? card.entity.id);
   }
   function handleSurfaceKeydown(event: KeyboardEvent) {
     if (!interactive || (event.key !== "Enter" && event.key !== " ")) return;
