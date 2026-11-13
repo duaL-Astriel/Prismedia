@@ -37,15 +37,15 @@ public sealed partial class EfEntityReadService {
         // can see. Wanted placeholders are intentionally excluded from membership facts, matching
         // direct child projections that reserve wanted rows for explicit acquisition surfaces.
         var allContributionEntities = _db.Entities.AsNoTracking();
-        var visibleContributionEntities = EntityCatalogQueryPolicy.Apply(
-                allContributionEntities,
-                allContributionEntities,
-                EntityCatalogSurface.Collection)
-            .Where(entity => !entity.IsWanted);
+        var visibleCatalogEntities = EntityCatalogQueryPolicy.Apply(
+            allContributionEntities,
+            allContributionEntities,
+            EntityCatalogSurface.Collection);
         if (enforceLibraryVisibility) {
-            visibleContributionEntities = ApplyEnabledLibraryVisibility(visibleContributionEntities);
+            visibleCatalogEntities = ApplyEnabledLibraryVisibility(visibleCatalogEntities);
         }
-        visibleContributionEntities = ApplyNsfwVisibility(visibleContributionEntities, hideNsfw);
+        visibleCatalogEntities = ApplyNsfwVisibility(visibleCatalogEntities, hideNsfw);
+        var visibleContributionEntities = visibleCatalogEntities.Where(entity => !entity.IsWanted);
         var parentIds = rows
             .Select(entity => entity.ParentEntityId)
             .Where(parentId => parentId is not null)
@@ -402,7 +402,8 @@ public sealed partial class EfEntityReadService {
             hideNsfw: hideNsfw,
             hiddenLibraryRootIds: enforceLibraryVisibility
                 ? await _libraryVisibility.GetCurrentHiddenRootIdsAsync(cancellationToken)
-                : []);
+                : [],
+            visibleCatalogEntities: visibleCatalogEntities);
         foreach (var contributor in _thumbnailContributors
                      .OrderBy(contributor => contributor.MetaPriority)
                      .ThenBy(contributor => contributor.GetType().FullName, StringComparer.Ordinal)) {
@@ -412,14 +413,19 @@ public sealed partial class EfEntityReadService {
         return baseThumbnails.Select(thumbnail => {
             var extraMeta = contributions.ExtraMetaFor(thumbnail.Id);
             var referenceCounts = contributions.ReferenceCountsFor(thumbnail.Id);
-            if (extraMeta.Count == 0 && referenceCounts is null) {
+            var singleReleaseEntityId = contributions.SingleReleaseEntityIdFor(thumbnail.Id);
+            if (extraMeta.Count == 0 && referenceCounts is null && singleReleaseEntityId is null) {
                 return thumbnail;
             }
 
             var meta = extraMeta.Count == 0
                 ? thumbnail.Meta
                 : extraMeta.Concat(thumbnail.Meta).Take(MaxThumbnailMeta).ToArray();
-            return thumbnail with { Meta = meta, ReferenceCounts = referenceCounts };
+            return thumbnail with {
+                Meta = meta,
+                ReferenceCounts = referenceCounts,
+                SingleReleaseEntityId = singleReleaseEntityId
+            };
         }).ToArray();
     }
 
