@@ -1,12 +1,16 @@
 <script lang="ts">
   import { ToggleButton } from "@prismedia/ui-svelte";
   import { CalendarRange } from "@lucide/svelte";
+  import { SvelteMap } from "svelte/reactivity";
   import { MEDIA_RESOLUTION_TIERS } from "$lib/api/generated/codes";
-  import { TextInput,  cn  } from "@prismedia/ui-svelte";
+  import { TextInput } from "@prismedia/ui-svelte";
+  import EntityPicker, { type EntityPickerItem } from "$lib/components/forms/EntityPicker.svelte";
+  import { searchEntityPickerItems } from "$lib/entities/entity-picker-search";
   import {
     CAPABILITY_KIND,
     ENTITY_ENGAGEMENT_MODE,
     ENTITY_KIND,
+    ENTITY_KIND_CATEGORY,
     ENTITY_KIND_DEFINITIONS,
     isEntityKindCode,
     isTaxonomyEntityKind,
@@ -15,6 +19,9 @@
     AVAILABILITY_FILTER_DEFS,
     BOOK_FORMAT_FILTER_DEFS,
     BOOK_TYPE_FILTER_DEFS,
+    isTagFilterId,
+    tagFilterId,
+    tagIdFromFilterId,
     type EntityGridFilterOption,
   } from "$lib/entities/entity-grid";
 
@@ -24,6 +31,12 @@
     entityKind?: string;
     /** Hide the book type/format chips (constrained views that already lock those filters). */
     lockBookFilters?: boolean;
+    /** Whether tag autocomplete searches should suppress NSFW tags. */
+    hideNsfw?: boolean;
+    /** Resolved tag items keyed by tag ID, supplied by the parent EntityGrid. */
+    knownTags?: ReadonlyMap<string, EntityPickerItem>;
+    /** Reports newly picked tag items so parent toolbars can render full tag titles. */
+    onTagItemsKnown?: (items: EntityPickerItem[]) => void;
     onActiveFilterIdsChange: (ids: string[]) => void;
   }
 
@@ -32,6 +45,9 @@
     filterOptions,
     entityKind,
     lockBookFilters = false,
+    hideNsfw = false,
+    knownTags,
+    onTagItemsKnown,
     onActiveFilterIdsChange,
   }: Props = $props();
 
@@ -90,6 +106,26 @@
   // resolved server-side across the whole library. The two chips are mutually exclusive — neither
   // selected means "all".
   const showReferenceFilters = $derived(entityKind != null && isTaxonomyEntityKind(entityKind));
+  const showTagFilter = $derived(
+    entityKind == null ||
+      (isEntityKindCode(entityKind) && ENTITY_KIND_DEFINITIONS[entityKind].category === ENTITY_KIND_CATEGORY.media),
+  );
+  const localKnownTags = new SvelteMap<string, EntityPickerItem>();
+  const selectedTagItems = $derived(
+    activeFilterIds
+      .map((id) => ({ id, tagId: tagIdFromFilterId(id) }))
+      .filter((entry): entry is { id: string; tagId: string } => Boolean(entry.tagId))
+      .map(({ id, tagId }) => {
+        const known = knownTags?.get(tagId) ?? localKnownTags.get(tagId);
+        if (known) return known;
+        const optionTitle = optionMap.get(id)?.value?.trim();
+        return {
+          id: tagId,
+          title: optionTitle || "Tag",
+          thumbnailUrl: null,
+        };
+      }),
+  );
   const REFERENCE_FILTER_IDS = ["taxonomy:referenced", "taxonomy:orphaned"];
   const AVAILABILITY_FILTER_IDS = AVAILABILITY_FILTER_DEFS.map((definition) => definition.id);
 
@@ -145,10 +181,45 @@
   function dateValue(prefix: string): string {
     return activeFilterIds.find((id) => id.startsWith(prefix))?.slice(prefix.length) ?? "";
   }
+
+  function handleTagsChange(items: EntityPickerItem[]) {
+    for (const item of items) {
+      localKnownTags.set(item.id, item);
+    }
+    onTagItemsKnown?.(items);
+    const seen = new Set<string>();
+    const nextTagIds: string[] = [];
+    for (const item of items) {
+      const id = tagFilterId(item.id);
+      if (!seen.has(id)) {
+        seen.add(id);
+        nextTagIds.push(id);
+      }
+    }
+    onActiveFilterIdsChange([
+      ...activeFilterIds.filter((id) => !isTagFilterId(id)),
+      ...nextTagIds,
+    ]);
+  }
 </script>
 
 <div class="surface-well mt-px p-3">
   <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+    {#if showTagFilter}
+      <section>
+        <div class="mb-2 text-kicker">Tags</div>
+        <EntityPicker
+          values={selectedTagItems}
+          mode="multi"
+          canAddNew={false}
+          addNewLabel="tag"
+          placeholder="Search tags…"
+          onSearch={(query) => searchEntityPickerItems(ENTITY_KIND.tag, query, { hideNsfw })}
+          onChange={handleTagsChange}
+        />
+      </section>
+    {/if}
+
     {#if hasTechnicalFilters}
       <section>
         <div class="mb-2 text-kicker">Resolution</div>

@@ -124,6 +124,8 @@ export interface EntityThumbnailCard {
   wantedStatus?: string | null;
   /** Latest linked acquisition state, retained after an entity leaves Wanted. */
   latestAcquisitionStatus?: string | null;
+  /** Tag display titles carried on list thumbnails for client-side fallback tag filtering. */
+  tagTitles?: string[];
   /**
    * Distinct acquisition states across the Entity's structural subtree. Availability filters use
    * membership here; older servers may omit it, in which case callers fall back to the singular status.

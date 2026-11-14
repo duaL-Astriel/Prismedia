@@ -42,4 +42,5 @@ engaged?: boolean;
 orphaned?: boolean;
 wanted?: boolean;
 acquisitionStatus?: string;
+tagIds?: string;
 };
