@@ -3537,6 +3537,58 @@ public sealed class EfEntityReadServiceTests {
         }
     }
 
+    [Fact]
+    public async Task ListAsyncFiltersByAllSpecifiedTagsAcrossMediaKinds() {
+        await using var db = CreateContext();
+        var now = DateTimeOffset.UtcNow;
+        var tagA = Guid.Parse("7a900000-0000-0000-0000-000000000001");
+        var tagB = Guid.Parse("7a900000-0000-0000-0000-000000000002");
+        var tagUnused = Guid.Parse("7a900000-0000-0000-0000-000000000003");
+        var videoBoth = Guid.Parse("7a910000-0000-0000-0000-000000000001");
+        var bookOnlyA = Guid.Parse("7a910000-0000-0000-0000-000000000002");
+        var audioBoth = Guid.Parse("7a910000-0000-0000-0000-000000000003");
+        var untagged = Guid.Parse("7a910000-0000-0000-0000-000000000004");
+
+        db.Entities.AddRange(
+            new EntityRow { Id = tagA, KindCode = EntityKind.Tag.ToCode(), Title = "Cyberpunk", CreatedAt = now, UpdatedAt = now },
+            new EntityRow { Id = tagB, KindCode = EntityKind.Tag.ToCode(), Title = "Neon", CreatedAt = now, UpdatedAt = now },
+            new EntityRow { Id = tagUnused, KindCode = EntityKind.Tag.ToCode(), Title = "Unused", CreatedAt = now, UpdatedAt = now },
+            new EntityRow { Id = videoBoth, KindCode = EntityKind.Video.ToCode(), Title = "Video Both", CreatedAt = now, UpdatedAt = now },
+            new EntityRow { Id = bookOnlyA, KindCode = EntityKind.Book.ToCode(), Title = "Book Only A", CreatedAt = now, UpdatedAt = now },
+            new EntityRow { Id = audioBoth, KindCode = EntityKind.AudioLibrary.ToCode(), Title = "Audio Both", CreatedAt = now, UpdatedAt = now },
+            new EntityRow { Id = untagged, KindCode = EntityKind.Video.ToCode(), Title = "Untagged Video", CreatedAt = now, UpdatedAt = now });
+        db.EntityRelationshipLinks.AddRange(
+            new EntityRelationshipLinkRow { EntityId = videoBoth, TargetEntityId = tagA, RelationshipCode = RelationshipKind.Tags.ToCode(), SortOrder = 0 },
+            new EntityRelationshipLinkRow { EntityId = videoBoth, TargetEntityId = tagB, RelationshipCode = RelationshipKind.Tags.ToCode(), SortOrder = 1 },
+            new EntityRelationshipLinkRow { EntityId = bookOnlyA, TargetEntityId = tagA, RelationshipCode = RelationshipKind.Tags.ToCode(), SortOrder = 0 },
+            new EntityRelationshipLinkRow { EntityId = audioBoth, TargetEntityId = tagA, RelationshipCode = RelationshipKind.Tags.ToCode(), SortOrder = 0 },
+            new EntityRelationshipLinkRow { EntityId = audioBoth, TargetEntityId = tagB, RelationshipCode = RelationshipKind.Tags.ToCode(), SortOrder = 1 });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+
+        var singleTag = await ((IEntityReadService)service).ListAsync(new EntityListQuery {
+            Kind = $"{EntityKind.Video.ToCode()},{EntityKind.Book.ToCode()},{EntityKind.AudioLibrary.ToCode()}",
+            TagIds = [tagA],
+        }, CancellationToken.None);
+        Assert.Equal(3, singleTag.TotalCount);
+        Assert.Equal([audioBoth, bookOnlyA, videoBoth], singleTag.Items.Select(item => item.Id).OrderBy(id => id).ToArray());
+
+        var bothTags = await ((IEntityReadService)service).ListAsync(new EntityListQuery {
+            Kind = $"{EntityKind.Video.ToCode()},{EntityKind.Book.ToCode()},{EntityKind.AudioLibrary.ToCode()}",
+            TagIds = [tagA, tagB],
+        }, CancellationToken.None);
+        Assert.Equal(2, bothTags.TotalCount);
+        Assert.Equal([audioBoth, videoBoth], bothTags.Items.Select(item => item.Id).OrderBy(id => id).ToArray());
+
+        var noMatch = await ((IEntityReadService)service).ListAsync(new EntityListQuery {
+            Kind = $"{EntityKind.Video.ToCode()},{EntityKind.Book.ToCode()},{EntityKind.AudioLibrary.ToCode()}",
+            TagIds = [tagA, tagUnused],
+        }, CancellationToken.None);
+        Assert.Equal(0, noMatch.TotalCount);
+        Assert.Empty(noMatch.Items);
+    }
+
     private static PrismediaDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<PrismediaDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())

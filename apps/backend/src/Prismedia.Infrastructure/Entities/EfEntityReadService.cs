@@ -99,7 +99,8 @@ public sealed partial class EfEntityReadService : IEntityReadService {
         bool? engaged = null,
         bool? orphaned = null,
         bool? wanted = null,
-        AcquisitionStatus? acquisitionStatus = null) {
+        AcquisitionStatus? acquisitionStatus = null,
+        IReadOnlyList<Guid>? tagIds = null) {
         var page = await ListPageAsync(
             new EntityListQuery {
                 Kind = kind,
@@ -126,6 +127,7 @@ public sealed partial class EfEntityReadService : IEntityReadService {
                 Orphaned = orphaned,
                 Wanted = wanted,
                 AcquisitionStatus = acquisitionStatus,
+                TagIds = tagIds,
             },
             includeTotalCount: true,
             ThumbnailProjectionMode.Full,
@@ -177,6 +179,7 @@ public sealed partial class EfEntityReadService : IEntityReadService {
         var orphaned = request.Orphaned;
         var wanted = request.Wanted;
         var acquisitionStatus = request.AcquisitionStatus;
+        var tagIds = request.TagIds;
         var pageSize = Math.Clamp(limit ?? DefaultPageSize, 1, MaxPageSize);
         var sortKey = sort ?? EntityListSort.Title;
         var activityShelfStatus = projectionMode == ThumbnailProjectionMode.Compact &&
@@ -249,7 +252,8 @@ public sealed partial class EfEntityReadService : IEntityReadService {
             nsfw,
             engaged,
             orphaned,
-            wanted);
+            wanted,
+            tagIds);
         entityQuery = await _acquisitionStatuses.ApplyFilterAsync(entityQuery, acquisitionStatus, cancellationToken);
         entityQuery = await _sourceOwnershipFilter.ApplyFilterAsync(entityQuery, hasFile, cancellationToken);
 
@@ -531,7 +535,8 @@ public sealed partial class EfEntityReadService : IEntityReadService {
         bool? nsfw = null,
         bool? engaged = null,
         bool? orphaned = null,
-        bool? wanted = null) {
+        bool? wanted = null,
+        IReadOnlyList<Guid>? tagIds = null) {
         var userId = CurrentUserId;
         var states = _db.UserEntityStates;
         if (favorite == true) {
@@ -581,6 +586,17 @@ public sealed partial class EfEntityReadService : IEntityReadService {
         if (bookFormats.Count > 0) {
             query = query.Where(entity =>
                 _db.BookDetails.Any(detail => detail.EntityId == entity.Id && bookFormats.Contains(detail.Format)));
+        }
+
+        if (tagIds is { Count: > 0 }) {
+            var tagRelationshipCode = RelationshipKind.Tags.ToCode();
+            foreach (var tagId in tagIds.Distinct()) {
+                var targetTagId = tagId;
+                query = query.Where(entity => _db.EntityRelationshipLinks.Any(link =>
+                    link.EntityId == entity.Id &&
+                    link.RelationshipCode == tagRelationshipCode &&
+                    link.TargetEntityId == targetTagId));
+            }
         }
 
         if (organized is { } wantsOrganized) {

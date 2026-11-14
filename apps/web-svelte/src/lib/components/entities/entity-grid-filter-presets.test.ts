@@ -6,6 +6,7 @@ import {
   readEntityGridPreset,
 } from "./entity-grid-filter-presets";
 import type { EntityGridFilterOption } from "$lib/entities/entity-grid";
+import { tagFilterId, tagFilterOption } from "$lib/entities/entity-grid";
 
 const filterOptions: EntityGridFilterOption[] = [{
   id: "flag:isFavorite",
@@ -57,5 +58,32 @@ describe("entity-grid filter presets", () => {
     expect(entityGridPresetStorageKey("videos")).toBe("prismedia:entity-grid-presets:videos");
     expect(entityGridPresetStorageKey(undefined)).toBeNull();
     expect(createEntityGridPresetId(36)).toBe("entity-grid-preset-10");
+  });
+
+  it("preserves tag filter IDs across preset save and load before tag labels hydrate", () => {
+    const tagId = "33333333-3333-3333-3333-333333333333";
+    const filterId = tagFilterId(tagId);
+    const saved = createEntityGridPreset({
+      id: "preset-tags",
+      name: "Cyberpunk Picks",
+      filterIds: [filterId],
+      filterOptions: [tagFilterOption(tagId, "Cyberpunk")],
+      sortBy: "title",
+      sortDir: "asc",
+    });
+
+    expect(saved.filters).toEqual([
+      { label: "Tag: Cyberpunk", type: "tags", value: filterId },
+    ]);
+
+    expect(readEntityGridPreset({
+      preset: saved,
+      filterOptions: [],
+      fallbackSortBy: "title",
+    })).toEqual({
+      filterIds: [filterId],
+      sortBy: "title",
+      sortDir: "asc",
+    });
   });
 });
