@@ -97,6 +97,45 @@ public sealed class ThumbnailContributorQueryTests {
             contributions.ExtraMetaFor(installment.Id));
     }
 
+    [Fact]
+    public void ComicSingleReleaseCountsTranslateToOneGroupedUnionAggregate() {
+        using var db = CreateNpgsqlContext();
+        var visibleEntities = db.Entities.AsNoTracking()
+            .Where(entity => !entity.IsNsfw);
+
+        var sql = ComicSingleReleaseThumbnailContributor.BuildCountQuery(
+                visibleEntities,
+                [Guid.Parse("33333333-3333-3333-3333-333333333333")])
+            .ToQueryString();
+
+        Assert.Contains("UNION ALL", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("GROUP BY", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("count(*)", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ORDER BY", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ComicSingleReleaseContributorNoOpsForNonComicSeriesPages() {
+        await using var db = new PrismediaDbContext(
+            new DbContextOptionsBuilder<PrismediaDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options);
+        var book = new EntityRow {
+            Id = Guid.NewGuid(),
+            KindCode = EntityKind.Book.ToCode(),
+            Title = "Book"
+        };
+        var contributions = new ThumbnailContributions(
+            [book],
+            db.Entities.AsNoTracking().Where(entity => !entity.IsWanted),
+            visibleCatalogEntities: db.Entities.AsNoTracking());
+
+        await new ComicSingleReleaseThumbnailContributor(db)
+            .ContributeAsync(contributions, CancellationToken.None);
+
+        Assert.Null(contributions.SingleReleaseEntityIdFor(book.Id));
+    }
+
     private static PrismediaDbContext CreateNpgsqlContext() =>
         new(new DbContextOptionsBuilder<PrismediaDbContext>()
             .UseNpgsql("Host=localhost;Database=prismedia;Username=prismedia;Password=prismedia")

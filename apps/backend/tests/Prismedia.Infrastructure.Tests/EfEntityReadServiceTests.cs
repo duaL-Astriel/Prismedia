@@ -3537,6 +3537,92 @@ public sealed class EfEntityReadServiceTests {
         }
     }
 
+    [Fact]
+    public async Task ListAsyncPopulatesSingleReleaseEntityIdOnlyForSingleReleaseComicSeries() {
+        await using var db = CreateContext();
+        var now = DateTimeOffset.UtcNow;
+
+        var directSingleSeriesId = Guid.NewGuid();
+        var directSingleInstallmentId = Guid.NewGuid();
+
+        var volumeSingleSeriesId = Guid.NewGuid();
+        var singleVolumeId = Guid.NewGuid();
+        var volumeSingleInstallmentId = Guid.NewGuid();
+
+        var multiSeriesId = Guid.NewGuid();
+        var multiFirstId = Guid.NewGuid();
+        var multiSecondId = Guid.NewGuid();
+
+        var mixedWantedSeriesId = Guid.NewGuid();
+        var mixedOwnedId = Guid.NewGuid();
+        var mixedWantedId = Guid.NewGuid();
+
+        var mixedNsfwSeriesId = Guid.NewGuid();
+        var mixedSfwId = Guid.NewGuid();
+        var mixedNsfwId = Guid.NewGuid();
+
+        db.Entities.AddRange(
+            ComicRow(directSingleSeriesId, EntityKind.ComicSeries, "One Shot"),
+            ComicRow(directSingleInstallmentId, EntityKind.ComicInstallment, "One Shot #1", directSingleSeriesId),
+            ComicRow(volumeSingleSeriesId, EntityKind.ComicSeries, "Volume One Shot"),
+            ComicRow(singleVolumeId, EntityKind.ComicVolume, "Volume 1", volumeSingleSeriesId),
+            ComicRow(volumeSingleInstallmentId, EntityKind.ComicInstallment, "Volume 1 #1", singleVolumeId),
+            ComicRow(multiSeriesId, EntityKind.ComicSeries, "Ongoing"),
+            ComicRow(multiFirstId, EntityKind.ComicInstallment, "Ongoing #1", multiSeriesId),
+            ComicRow(multiSecondId, EntityKind.ComicInstallment, "Ongoing #2", multiSeriesId),
+            ComicRow(mixedWantedSeriesId, EntityKind.ComicSeries, "Has Wanted"),
+            ComicRow(mixedOwnedId, EntityKind.ComicInstallment, "Has Wanted #1", mixedWantedSeriesId),
+            ComicRow(mixedWantedId, EntityKind.ComicInstallment, "Has Wanted #2", mixedWantedSeriesId, isWanted: true),
+            ComicRow(mixedNsfwSeriesId, EntityKind.ComicSeries, "Mixed NSFW"),
+            ComicRow(mixedSfwId, EntityKind.ComicInstallment, "Mixed #1", mixedNsfwSeriesId),
+            ComicRow(mixedNsfwId, EntityKind.ComicInstallment, "Mixed #2", mixedNsfwSeriesId, isNsfw: true));
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+        var hiddenNsfwResult = await service.ListAsync(
+            EntityKind.ComicSeries.ToCode(),
+            query: null,
+            cursor: null,
+            hideNsfw: true,
+            limit: 50,
+            CancellationToken.None);
+
+        var hiddenById = hiddenNsfwResult.Items.ToDictionary(item => item.Id);
+        Assert.Equal(directSingleInstallmentId, hiddenById[directSingleSeriesId].SingleReleaseEntityId);
+        Assert.Equal(volumeSingleInstallmentId, hiddenById[volumeSingleSeriesId].SingleReleaseEntityId);
+        Assert.Null(hiddenById[multiSeriesId].SingleReleaseEntityId);
+        Assert.Null(hiddenById[mixedWantedSeriesId].SingleReleaseEntityId);
+        Assert.Equal(mixedSfwId, hiddenById[mixedNsfwSeriesId].SingleReleaseEntityId);
+
+        var showingNsfwResult = await service.ListAsync(
+            EntityKind.ComicSeries.ToCode(),
+            query: null,
+            cursor: null,
+            hideNsfw: false,
+            limit: 50,
+            CancellationToken.None);
+        var showingById = showingNsfwResult.Items.ToDictionary(item => item.Id);
+        Assert.Null(showingById[mixedNsfwSeriesId].SingleReleaseEntityId);
+
+        EntityRow ComicRow(
+            Guid id,
+            EntityKind kind,
+            string title,
+            Guid? parentId = null,
+            bool isNsfw = false,
+            bool isWanted = false) =>
+            new() {
+                Id = id,
+                KindCode = kind.ToCode(),
+                Title = title,
+                ParentEntityId = parentId,
+                IsNsfw = isNsfw,
+                IsWanted = isWanted,
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+    }
+
     private static PrismediaDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<PrismediaDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())

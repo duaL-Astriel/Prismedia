@@ -107,6 +107,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Changed
 
+- In the Comics tab, clicking a comic that only has a single release opens that comic directly instead of showing an intermediate series overview.
+
 - Selecting items in library grids no longer needs a Select button. Hover a card to tick its checkbox (touch screens always show it). Once anything is selected, every card shows its checkbox and a click selects instead of opening, and a floating bar at the bottom of the screen holds Select all, Clear, and the bulk actions. The bar stays put while scrolling, so actions remain reachable on long pages, and it disappears when the selection is cleared. The Identify page's queue button moves into the same bar.
 
 - Connected-manager requests for movies, series, Books, and comic issues go through one review-and-commit flow: every request names its work once, asks for the scopes it needs (each Book format keeps its own mapped library and outcome), and the older per-kind manager request routes are gone.
