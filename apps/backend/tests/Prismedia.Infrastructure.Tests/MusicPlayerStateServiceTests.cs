@@ -466,7 +466,8 @@ public sealed class MusicPlayerStateServiceTests {
             bool? engaged = null,
             bool? orphaned = null,
             bool? wanted = null,
-            AcquisitionStatus? acquisitionStatus = null) =>
+            AcquisitionStatus? acquisitionStatus = null,
+            IReadOnlyList<Guid>? tagIds = null) =>
             throw new NotSupportedException();
 
         public Task<EntityCard?> GetAsync(Guid id, bool hideNsfw, CancellationToken cancellationToken) {

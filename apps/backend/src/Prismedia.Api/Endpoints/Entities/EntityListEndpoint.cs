@@ -57,6 +57,9 @@ internal static class EntityListEndpoint {
                 out var sortDirectionError)) {
             return sortDirectionError;
         }
+        if (!TryGetTagIds(request.TagIds, out var tagIds, out var tagIdsError)) {
+            return tagIdsError;
+        }
 
         return Results.Ok(await entities.ListAsync(
             request.ToQuery(
@@ -64,7 +67,8 @@ internal static class EntityListEndpoint {
                 NsfwVisibility.ShouldHide(request.HideNsfw, httpContext),
                 sort,
                 sortDirection,
-                acquisitionStatus),
+                acquisitionStatus,
+                tagIds),
             cancellationToken));
     }
 
@@ -89,6 +93,9 @@ internal static class EntityListEndpoint {
                 out var sortDirectionError)) {
             return sortDirectionError;
         }
+        if (!TryGetTagIds(request.TagIds, out var tagIds, out var tagIdsError)) {
+            return tagIdsError;
+        }
 
         return Results.Ok(await entities.ListShelfAsync(
             request.ToQuery(
@@ -96,7 +103,8 @@ internal static class EntityListEndpoint {
                 NsfwVisibility.ShouldHide(request.HideNsfw, httpContext),
                 sort,
                 sortDirection,
-                acquisitionStatus),
+                acquisitionStatus,
+                tagIds),
             cancellationToken));
     }
 
@@ -168,6 +176,34 @@ internal static class EntityListEndpoint {
             ApiProblemCodes.RequestInvalid,
             $"Entity {label} '{value}' is not recognized."));
         return false;
+    }
+
+    private static bool TryGetTagIds(
+        string? value,
+        out IReadOnlyList<Guid>? tagIds,
+        out IResult error) {
+        tagIds = null;
+        error = Results.Empty;
+        if (string.IsNullOrWhiteSpace(value)) {
+            return true;
+        }
+
+        var parsed = new List<Guid>();
+        foreach (var token in value.Split(',', StringSplitOptions.TrimEntries)) {
+            if (!Guid.TryParse(token, out var tagId) || tagId == Guid.Empty) {
+                error = Results.BadRequest(new ApiProblem(
+                    ApiProblemCodes.RequestInvalid,
+                    $"Tag filter value '{token}' is not a valid entity id."));
+                return false;
+            }
+
+            if (!parsed.Contains(tagId)) {
+                parsed.Add(tagId);
+            }
+        }
+
+        tagIds = parsed;
+        return true;
     }
 }
 
@@ -244,12 +280,16 @@ internal sealed record EntityListParameters {
     [FromQuery(Name = "acquisitionStatus")]
     public string? AcquisitionStatus { get; init; }
 
+    [FromQuery(Name = "tagIds")]
+    public string? TagIds { get; init; }
+
     public EntityListQuery ToQuery(
         string? kind,
         bool? hideNsfw,
         EntityListSort? sort,
         EntitySortDirection? sortDirection,
-        AcquisitionStatus? acquisitionStatus = null) => new() {
+        AcquisitionStatus? acquisitionStatus = null,
+        IReadOnlyList<Guid>? tagIds = null) => new() {
         Kind = kind,
         Query = Query,
         Cursor = Cursor,
@@ -274,5 +314,6 @@ internal sealed record EntityListParameters {
         Orphaned = Orphaned,
         Wanted = Wanted,
         AcquisitionStatus = acquisitionStatus,
+        TagIds = tagIds,
     };
 }
