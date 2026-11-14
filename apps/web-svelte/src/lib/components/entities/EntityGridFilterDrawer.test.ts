@@ -112,7 +112,7 @@ describe("EntityGridFilterDrawer availability", () => {
     await waitFor(() =>
       expect(mockSearch).toHaveBeenCalledWith(ENTITY_KIND.tag, "cyb", { hideNsfw: false }),
     );
-    await fireEvent.click(await screen.findByRole("option", { name: "Cyberpunk" }));
+    await fireEvent.click((await screen.findByText("Cyberpunk")).closest('[role="option"]')!);
     expect(onChange).toHaveBeenLastCalledWith([tagFilterId("tag-1")]);
     expect(onTagItemsKnown).toHaveBeenLastCalledWith([
       { id: "tag-1", title: "Cyberpunk", thumbnailUrl: null },
@@ -126,7 +126,7 @@ describe("EntityGridFilterDrawer availability", () => {
       onActiveFilterIdsChange: onChange,
     });
 
-    await fireEvent.click(await screen.findByRole("option", { name: "Neon" }));
+    await fireEvent.click((await screen.findByText("Neon")).closest('[role="option"]')!);
     expect(onChange).toHaveBeenLastCalledWith([tagFilterId("tag-1"), tagFilterId("tag-2")]);
 
     await rerender({

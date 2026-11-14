@@ -182,6 +182,10 @@
     return activeFilterIds.find((id) => id.startsWith(prefix))?.slice(prefix.length) ?? "";
   }
 
+  function searchTagOptions(query: string) {
+    return searchEntityPickerItems(ENTITY_KIND.tag, query, { hideNsfw });
+  }
+
   function handleTagsChange(items: EntityPickerItem[]) {
     for (const item of items) {
       localKnownTags.set(item.id, item);
@@ -214,7 +218,7 @@
           canAddNew={false}
           addNewLabel="tag"
           placeholder="Search tags…"
-          onSearch={(query) => searchEntityPickerItems(ENTITY_KIND.tag, query, { hideNsfw })}
+          onSearch={searchTagOptions}
           onChange={handleTagsChange}
         />
       </section>
