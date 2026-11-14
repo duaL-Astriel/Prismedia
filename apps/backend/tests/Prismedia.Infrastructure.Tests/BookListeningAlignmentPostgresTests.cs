@@ -114,6 +114,69 @@ public sealed class BookListeningAlignmentPostgresTests {
 
     [Fact]
     [Trait("Category", "PostgreSQL")]
+    public async Task ResentListeningPositionDoesNotOutrankNewerReading() {
+        await using var database = await PostgresTestDatabase.CreateAsync();
+        var fixture = await SeedAsync(database, "Opening", "Afterword");
+        var readLaterAt = ListenedAt.AddMinutes(5);
+
+        await using (var db = database.CreateContext()) {
+            await CreateCapabilities(db, fixture, ListenedAt).ReportProgressAsync(
+                fixture.BookId,
+                new EntityProgressReport(
+                    Modality: ConsumptionModality.Listening,
+                    Listening: new ListeningPositionRequest(fixture.PairedTrackId, null, 450)),
+                CancellationToken.None);
+            await CreateCapabilities(db, fixture, readLaterAt).ReportProgressAsync(
+                fixture.BookId,
+                new EntityProgressReport(
+                    fixture.BookId,
+                    ProgressUnit.Cfi,
+                    4_200,
+                    10_000,
+                    ReaderMode.Paged,
+                    Location: "epubcfi(/6/4!/4/8)",
+                    Modality: ConsumptionModality.Reading),
+                CancellationToken.None);
+            // A player reopened on another device re-sends its saved spot, give or take a seek.
+            var resent = await CreateCapabilities(db, fixture, readLaterAt.AddMinutes(5)).ReportProgressAsync(
+                fixture.BookId,
+                new EntityProgressReport(
+                    Modality: ConsumptionModality.Listening,
+                    Listening: new ListeningPositionRequest(fixture.PairedTrackId, null, 450.4)),
+                CancellationToken.None);
+            Assert.Equal(EntityProgressReportStatus.Applied, resent.Status);
+        }
+
+        await using (var db = database.CreateContext()) {
+            var state = await db.UserEntityStates.AsNoTracking()
+                .SingleAsync(row => row.UserId == fixture.UserId && row.EntityId == fixture.BookId);
+            Assert.Equal(4_200, state.ProgressIndex);
+            Assert.Equal(readLaterAt, state.ProgressUpdatedAt);
+
+            var resume = (await CreateAlignments(db, fixture).GetAsync(fixture.BookId, CancellationToken.None))!.Resume!;
+            Assert.Equal(ConsumptionModality.Reading, resume.LastModality);
+            Assert.Equal(AlignmentBasis.Exact, resume.ContinueReading.Basis);
+            Assert.Equal("epubcfi(/6/4!/4/8)", resume.ContinueReading.Reading?.Location);
+        }
+
+        // Playing on from that spot is newer listening again, and reading follows it.
+        await using (var db = database.CreateContext()) {
+            await CreateCapabilities(db, fixture, readLaterAt.AddMinutes(10)).ReportProgressAsync(
+                fixture.BookId,
+                new EntityProgressReport(
+                    ActivitySeconds: 10,
+                    Modality: ConsumptionModality.Listening,
+                    Listening: new ListeningPositionRequest(fixture.PairedTrackId, null, 460)),
+                CancellationToken.None);
+            var resume = (await CreateAlignments(db, fixture).GetAsync(fixture.BookId, CancellationToken.None))!.Resume!;
+            Assert.Equal(ConsumptionModality.Listening, resume.LastModality);
+            Assert.True(resume.ContinueReading.Approximate);
+            Assert.Null(resume.ContinueReading.Reading?.Location);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "PostgreSQL")]
     public async Task SeparateBooksKeepReadingAndListeningApartEverywhere() {
         await using var database = await PostgresTestDatabase.CreateAsync();
         // "Part 1"/"Part 2" files are part splits, so even the hand-picked pair cannot link the Book.
