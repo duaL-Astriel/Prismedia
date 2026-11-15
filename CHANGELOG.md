@@ -109,6 +109,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Changed
 
+- In the Comics tab, clicking a comic that only has a single release opens that comic directly instead of showing an intermediate series overview.
+
 - Selecting items in library grids no longer needs a Select button. Hover a card to tick its checkbox (touch screens always show it). Once anything is selected, every card shows its checkbox and a click selects instead of opening, and a floating bar at the bottom of the screen holds Select all, Clear, and the bulk actions. The bar stays put while scrolling, so actions remain reachable on long pages, and it disappears when the selection is cleared. The Identify page's queue button moves into the same bar.
 
 - Connected-manager requests for movies, series, Books, and comic issues go through one review-and-commit flow: every request names its work once, asks for the scopes it needs (each Book format keeps its own mapped library and outcome), and the older per-kind manager request routes are gone.
@@ -238,6 +240,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Held movie imports now let you choose and accept a video file, and held album or track imports let you map downloaded audio to the requested tracks while retaining their titles and order. Reviewed choices survive worker retries. Video quality checks ignore attached cover art, honor the default video stream, and recognize full-height narrow video; warnings identify the checked file and its dimensions.
 
 - Switching from reading to listening at the beginning of an EPUB chapter keeps the correct chapter even when its saved percentage rounds down.
+
+- Continue reading on a Book with a matched audiobook no longer jumps back to an older listening spot, and then saves over your reading position, when an app or browser reopens a paused audiobook and re-sends where it stopped. Only listening that actually moves now counts as newer than reading.
 
 - Request, Identify, and Files pages inside the iOS app now scroll as one page from anywhere, including drags that start on buttons, and render every row. Content stays clear of the status bar and tab bar, toolbars pin below the status bar, and Files fills the space between the bars.
 - Accepting an Identify proposal keeps the review and its progress on screen until the next page opens, instead of briefly showing the search view or a loader.

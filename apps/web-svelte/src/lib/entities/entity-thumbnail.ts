@@ -133,6 +133,8 @@ export interface EntityThumbnailCard {
   acquisitionStatuses?: string[] | null;
   routeContext?: EntityRouteContext;
   subtitle?: string;
+  /** Optional target entity id for artwork view transitions when href navigates to another entity. */
+  transitionEntityId?: string;
 }
 
 export interface EntityReferenceThumbnailOptions {
@@ -144,6 +146,8 @@ export interface EntityReferenceThumbnailOptions {
   meta?: EntityThumbnailMetaItem[];
   routeContext?: EntityRouteContext;
   subtitle?: string;
+  /** Optional target entity id for artwork view transitions when href navigates to another entity. */
+  transitionEntityId?: string;
 }
 
 /** Converts a named or numeric entity aspect ratio into a CSS aspect-ratio value. */
