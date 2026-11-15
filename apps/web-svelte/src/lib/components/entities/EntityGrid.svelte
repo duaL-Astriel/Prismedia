@@ -5,9 +5,11 @@
   import { fly } from "svelte/transition";
   import { SvelteMap } from "svelte/reactivity";
   import { isNsfw, isWanted, withFlagCapability } from "$lib/api/capabilities";
+  import { fetchEntityThumbnails } from "$lib/api/entities";
   import { removeWantedEntities } from "$lib/api/requests";
   import type { EntityCapability } from "$lib/api/generated/model";
   import { updateEntityFlags } from "$lib/api/entity-mutations";
+  import type { EntityPickerItem } from "$lib/components/forms/EntityPicker.svelte";
   import { createFilterPresets, type FilterPreset } from "$lib/filter-presets";
   import { createEntityGridPrefs, type EntityGridPrefs } from "$lib/entities/entity-grid-prefs";
   import { usePageSnapshots } from "$lib/stores/page-snapshots.svelte";
@@ -17,6 +19,8 @@
     buildCapabilityFilterOptions,
     buildEntityKindTabs,
     entityGridRequestFromState,
+    tagFilterOption,
+    tagIdFromFilterId,
     type EntityGridRequest,
     type EntityGridSort,
     type EntityGridSortDir,
@@ -200,6 +204,9 @@
   const persistedPrefs: EntityGridPrefs | null = prefsStore ? prefsStore.load() : null;
 
   const capabilityOverrides = new SvelteMap<string, EntityCapability[]>();
+  /** Resolved tag items (picked in this session or hydrated from persisted filter IDs) for chip labels. */
+  const knownTags = new SvelteMap<string, EntityPickerItem>();
+  const attemptedTagLookups = new Set<string>();
   /** Wanted placeholders the server confirmed removed during this session. */
   let removedIds = $state(new Set<string>());
   /** Actionable durable-teardown failures for wanted cards that remain selected. */
@@ -254,7 +261,14 @@
     });
   });
   const tabs = $derived(buildEntityKindTabs(effectiveCards, { includeNsfw: gridState.includeNsfw }));
-  const filterOptions = $derived(buildCapabilityFilterOptions(effectiveCards, entityKind));
+  const baseFilterOptions = $derived(buildCapabilityFilterOptions(effectiveCards, entityKind));
+  const filterOptions = $derived.by(() => {
+    const activeTagOptions = filterIds
+      .map((id) => tagIdFromFilterId(id))
+      .filter((id): id is string => Boolean(id))
+      .map((id) => tagFilterOption(id, knownTags.get(id)?.title));
+    return activeTagOptions.length === 0 ? baseFilterOptions : [...baseFilterOptions, ...activeTagOptions];
+  });
   const visibleCards = $derived(
     applyEntityGridState(effectiveCards, gridState, filterOptions, {
       preserveServerResolvedSorts: Boolean(onRequestChange),
@@ -385,6 +399,36 @@
     onRequestChange?.(request);
   });
 
+  // Hydrate display titles for any persisted or preset tag filter IDs that were not
+  // picked interactively in the current session.
+  $effect(() => {
+    if (!browser) return;
+    const missingIds = filterIds
+      .map((id) => tagIdFromFilterId(id))
+      .filter((id): id is string => Boolean(id && !knownTags.has(id) && !attemptedTagLookups.has(id)));
+    if (missingIds.length === 0) return;
+    for (const id of missingIds) attemptedTagLookups.add(id);
+    let cancelled = false;
+    void fetchEntityThumbnails(missingIds, { hideNsfw: effectiveNsfwMode !== "show" })
+      .then((thumbnails) => {
+        if (cancelled) return;
+        for (const thumbnail of thumbnails) {
+          knownTags.set(thumbnail.id, {
+            id: thumbnail.id,
+            title: thumbnail.title,
+            thumbnailUrl: thumbnail.coverThumbUrl ?? thumbnail.coverUrl ?? null,
+            subtitle: thumbnail.subtitle ?? undefined,
+          });
+        }
+      })
+      .catch(() => {
+        // The fallback "Tag" label stays valid if thumbnail hydration fails.
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+
   // Persist the full view state for this grid whenever a tracked control
   // changes. Reading every field here registers them as dependencies so any
   // change re-runs the effect. Only non-default state is stored; returning a
@@ -432,6 +476,13 @@
     pagination.resetPage();
     selectedIds = [];
     onSelectionChange?.(selectedIds);
+  }
+
+  function recordKnownTagItems(items: EntityPickerItem[]) {
+    for (const item of items) {
+      knownTags.set(item.id, item);
+      attemptedTagLookups.add(item.id);
+    }
   }
 
   function setFilterIds(ids: string[]) {
@@ -684,6 +735,9 @@
       {filterOptions}
       {entityKind}
       {lockBookFilters}
+      hideNsfw={effectiveNsfwMode !== "show"}
+      {knownTags}
+      onTagItemsKnown={recordKnownTagItems}
       onActiveFilterIdsChange={setFilterIds}
     />
   {/if}

@@ -34,7 +34,8 @@ internal abstract class EntityReadServiceStub : IEntityReadService {
         bool? engaged = null,
         bool? orphaned = null,
         bool? wanted = null,
-        AcquisitionStatus? acquisitionStatus = null) =>
+        AcquisitionStatus? acquisitionStatus = null,
+        IReadOnlyList<Guid>? tagIds = null) =>
         Task.FromResult(new EntityListResponse([], null, 0));
 
     public virtual Task<EntityShelfResponse> ListShelfAsync(
