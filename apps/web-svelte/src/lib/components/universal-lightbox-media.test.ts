@@ -8,9 +8,12 @@ import {
   isAnimatedStillImage,
   isLightboxVideoCapable,
   lightboxEntityFromCard,
+  selectLightboxCardsToHydrate,
   type UniversalLightboxEntity,
 } from "./universal-lightbox-media";
 import { entityFileUrl } from "$lib/api/files";
+import { ENTITY_KIND, type EntityKindCode } from "$lib/entities/entity-codes";
+import type { EntityThumbnailCard } from "$lib/entities/entity-thumbnail";
 
 const imageCapability = {
   kind: "images",
@@ -267,6 +270,38 @@ describe("universal-lightbox-media", () => {
       initialAspectRatio: { width: 1080, height: 1920 },
       isNsfw: true,
     });
+  });
+
+  it("selects the active card and immediate lightboxable neighbors for pre-hydration", () => {
+    const makeCard = (id: string, kind: EntityKindCode): EntityThumbnailCard => ({
+      aspectRatio: "square",
+      cover: null,
+      entity: {
+        id,
+        kind,
+        title: id,
+        parentEntityId: null,
+        sortOrder: null,
+        capabilities: [],
+        childrenByKind: [],
+        relationships: [],
+      },
+      fit: "cover",
+      hover: { kind: "none" },
+      meta: [],
+    });
+
+    const img1 = makeCard("img-1", ENTITY_KIND.image);
+    const img2 = makeCard("img-2", ENTITY_KIND.image);
+    const gal1 = makeCard("gal-1", ENTITY_KIND.gallery);
+    const vid1 = makeCard("vid-1", ENTITY_KIND.video);
+    const cards = [img1, img2, gal1, vid1];
+
+    const selected = selectLightboxCardsToHydrate(cards, 1, { "img-2": entity({ id: "img-2" }) }, ["img-1"]);
+    expect(selected.map((card) => card.entity.id)).toEqual([]);
+
+    const selectedWithNext = selectLightboxCardsToHydrate(cards, 0, {}, new Set(["img-2"]));
+    expect(selectedWithNext.map((card) => card.entity.id)).toEqual(["img-1", "vid-1"]);
   });
 });
 

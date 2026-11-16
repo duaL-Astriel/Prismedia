@@ -225,6 +225,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- Navigating between items in the image lightbox keeps the preview visible while the full-resolution image loads or hydrates, instead of turning the media invisible for several seconds after each step.
+
 - Animated and video images opened in the lightbox keep their playback controls usable: after the controls auto-hide, hovering or tapping the video brings them back instead of leaving them hidden for good.
 
 - Video and audio playback volume and muted states are remembered in client storage across media changes, page reloads, and player transitions instead of resetting to 100%.

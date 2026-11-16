@@ -104,6 +104,40 @@ export function lightboxEntityFromCard(card: EntityThumbnailCard): UniversalLigh
   };
 }
 
+/**
+ * Returns the active lightbox card followed by its immediate next/previous neighbors
+ * that are image/video cards and not yet hydrated, so full-resolution media sources can
+ * be pre-warmed before the user navigates.
+ */
+export function selectLightboxCardsToHydrate(
+  cards: EntityThumbnailCard[],
+  index: number,
+  hydrated: Record<string, UniversalLightboxEntity>,
+  inFlight: readonly string[] | ReadonlySet<string>,
+): EntityThumbnailCard[] {
+  if (cards.length === 0 || index < 0 || index >= cards.length) return [];
+
+  const candidateIndices = [
+    index,
+    (index + 1) % cards.length,
+    (index - 1 + cards.length) % cards.length,
+  ];
+  const seenIds = new Set<string>();
+  const result: EntityThumbnailCard[] = [];
+
+  for (const candidateIndex of candidateIndices) {
+    const card = cards[candidateIndex];
+    if (!card || (card.entity.kind !== ENTITY_KIND.image && card.entity.kind !== ENTITY_KIND.video)) continue;
+    const id = card.entity.id;
+    const isInFlight = inFlight instanceof Set ? inFlight.has(id) : (inFlight as readonly string[]).includes(id);
+    if (seenIds.has(id) || hydrated[id] || isInFlight) continue;
+    seenIds.add(id);
+    result.push(card);
+  }
+
+  return result;
+}
+
 function numericAspectRatio(
   aspectRatio: EntityThumbnailAspectRatio,
 ): UniversalLightboxEntity["initialAspectRatio"] {
