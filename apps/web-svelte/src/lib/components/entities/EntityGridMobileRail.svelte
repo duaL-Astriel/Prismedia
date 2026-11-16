@@ -177,10 +177,11 @@
         </Button>
       </div>
     {:else}
-      <button
-        bind:this={searchPillEl}
-        type="button"
-        class="search-pill"
+      <Button
+        bind:ref={searchPillEl}
+        variant="outline"
+        size="sm"
+        class="h-8 min-w-0 flex-1 justify-start gap-2 rounded-xs border-border-subtle bg-surface-1 px-2.5 font-normal hover:border-border-default"
         aria-label="Search the library"
         onclick={openSearch}
       >
@@ -190,7 +191,7 @@
         {:else}
           <span class="min-w-0 flex-1 truncate text-left text-text-disabled">Search…</span>
         {/if}
-      </button>
+      </Button>
 
       {#if query}
         <Button
@@ -411,27 +412,6 @@
       transparent 100%
     );
     pointer-events: none;
-  }
-
-  .search-pill {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    flex: 1 1 0%;
-    min-width: 0;
-    height: 2rem;
-    padding: 0 0.6rem;
-    border: 1px solid var(--color-border-subtle);
-    border-radius: var(--radius-xs, 4px);
-    background: var(--color-surface-1);
-    font-size: var(--text-control, 0.875rem);
-    transition: border-color 140ms ease;
-  }
-
-  .search-pill:hover,
-  .search-pill:focus-visible {
-    border-color: var(--color-border-default);
-    outline: none;
   }
 
   @media (prefers-reduced-motion: reduce) {
