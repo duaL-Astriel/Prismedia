@@ -26,7 +26,6 @@
   import type { EntityThumbnailCard } from "$lib/entities/entity-thumbnail";
   import { isCollectionEntityType, type CollectionEntityType } from "$lib/collections/models";
   import BulkSelectionBar from "./BulkSelectionBar.svelte";
-  import EntityGridFilterDrawer from "./EntityGridFilterDrawer.svelte";
   import EntityGridContent from "./EntityGridContent.svelte";
   import EntityGridPagination from "./EntityGridPagination.svelte";
   import EntityGridTabs from "./EntityGridTabs.svelte";
@@ -644,6 +643,7 @@
     {drawerOpen}
     {entityKind}
     {filterOptions}
+    {lockBookFilters}
     {maxScale}
     {mediaWall}
     {minScale}
@@ -676,16 +676,6 @@
         <p>{message}</p>
       {/each}
     </div>
-  {/if}
-
-  {#if drawerOpen}
-    <EntityGridFilterDrawer
-      activeFilterIds={filterIds}
-      {filterOptions}
-      {entityKind}
-      {lockBookFilters}
-      onActiveFilterIdsChange={setFilterIds}
-    />
   {/if}
 
   <EntityGridTabs

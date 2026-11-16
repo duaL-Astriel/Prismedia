@@ -408,6 +408,29 @@ describe("EntityGrid pagination", () => {
     expect(container.querySelector(".pagination-shell")).toBeNull();
     expect(screen.queryByText("Page 1 / 1")).not.toBeInTheDocument();
   });
+
+  it("anchors the filter drawer inside the sticky search toolbar instead of above the grid viewport", async () => {
+    const cards = Array.from({ length: 6 }, (_, index) => card(index));
+    const { container } = render(EntityGrid, {
+      props: {
+        cards,
+        prefsKey: undefined,
+      },
+    });
+
+    const filtersButton = screen.getByRole("button", { name: "Filters" });
+    await fireEvent.click(filtersButton);
+
+    const filterRegion = screen.getByRole("region", { name: "Filter options" });
+    const toolbarShell = container.querySelector(".toolbar-shell");
+    const gridViewport = container.querySelector(".grid-viewport");
+    expect(toolbarShell).toContainElement(filterRegion);
+    expect(gridViewport).not.toContainElement(filterRegion);
+    expect(filtersButton).toHaveAttribute("aria-controls", filterRegion.id);
+
+    await fireEvent.click(filtersButton);
+    expect(screen.queryByRole("region", { name: "Filter options" })).not.toBeInTheDocument();
+  });
 });
 
 function card(index: number): EntityThumbnailCard {

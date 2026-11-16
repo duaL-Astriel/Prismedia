@@ -147,7 +147,7 @@
   }
 </script>
 
-<div class="surface-well mt-px p-3">
+<div class="surface-well p-3">
   <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
     {#if hasTechnicalFilters}
       <section>
@@ -342,10 +342,10 @@
 
 <style>
   .surface-well {
-    background: var(--color-surface-1, #0c0f15);
-    border: 1px solid var(--color-border-subtle, rgba(148, 158, 178, 0.07));
+    background: var(--color-surface-1, #111214);
+    border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.13));
     border-radius: var(--radius-sm, 6px);
-    box-shadow: inset 0 2px 8px rgba(0,0,0,0.30);
+    box-shadow: var(--shadow-elevated);
   }
 
   .date-row {
