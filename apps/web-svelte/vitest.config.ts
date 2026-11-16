@@ -9,7 +9,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     // Component styles are stripped by default; opt in where a test asserts real CSS behavior.
-    css: { include: [/UniversalLightbox\.svelte/] },
+    css: { include: [/UniversalLightbox(?:VideoStage)?\.svelte/] },
     include: ["src/**/*.{test,spec}.{ts,js}"],
     coverage: {
       provider: "v8",
