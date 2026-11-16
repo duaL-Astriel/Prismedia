@@ -12,9 +12,12 @@ import {
   buildEntityKindTabs,
   buildServerQueryFromFilters,
   entityCardToThumbnailCard,
+  entityGridFilterFromId,
   entityGridRequestFromState,
   isServerResolvedFilterId,
   normalizeEntityGridFilterIds,
+  tagFilterId,
+  tagFilterOption,
   type EntityGridState,
 } from "./entity-grid";
 
@@ -677,5 +680,50 @@ describe("server-resolved filters and sorting", () => {
     expect(firstShuffle).toEqual(sameShuffle);
     expect(firstShuffle).not.toEqual(cards.map((c) => c.entity.id));
     expect(firstShuffle).not.toEqual(reshuffle);
+  });
+
+  it("serializes multi-select tag filters into comma-separated tagIds and treats them as server-resolved", () => {
+    const tagA = "11111111-1111-1111-1111-111111111111";
+    const tagB = "22222222-2222-2222-2222-222222222222";
+    const filterA = tagFilterId(tagA);
+    const filterB = tagFilterId(tagB);
+
+    expect(isServerResolvedFilterId(filterA)).toBe(true);
+    expect(buildServerQueryFromFilters([filterA, filterB, filterA])).toEqual({
+      tagIds: `${tagA},${tagB}`,
+    });
+
+    const resolvedOption = tagFilterOption(tagA, "Cyberpunk");
+    expect(entityGridFilterFromId(filterA, [resolvedOption])).toEqual(resolvedOption);
+    expect(entityGridFilterFromId(filterB, [resolvedOption])).toMatchObject({
+      id: filterB,
+      label: "Tag",
+    });
+
+    const request = entityGridRequestFromState(
+      gridState({ filterIds: [filterA, filterB] }),
+      [resolvedOption],
+    );
+    expect(request.server.tagIds).toBe(`${tagA},${tagB}`);
+    expect(request.filters.map((filter) => filter.label)).toEqual(["Tag: Cyberpunk", "Tag"]);
+  });
+
+  it("matches all selected tags on local detail-page grids when serverResolvedFilters is false", () => {
+    const tagA = "11111111-1111-1111-1111-111111111111";
+    const tagB = "22222222-2222-2222-2222-222222222222";
+    const cards = [
+      entityCardToThumbnailCard({ ...thumbnailEntity("both", "video", "Both Tags"), genres: ["Cyberpunk", "Neon"] }),
+      entityCardToThumbnailCard({ ...thumbnailEntity("only-a", "book", "Only Cyberpunk"), genres: ["Cyberpunk"] }),
+      entityCardToThumbnailCard({ ...thumbnailEntity("none", "image", "Untagged"), genres: [] }),
+    ];
+
+    const visible = applyEntityGridState(
+      cards,
+      gridState({ filterIds: [tagFilterId(tagA), tagFilterId(tagB)] }),
+      [tagFilterOption(tagA, "Cyberpunk"), tagFilterOption(tagB, "Neon")],
+      { serverResolvedFilters: false },
+    );
+
+    expect(visible.map((card) => card.entity.id)).toEqual(["both"]);
   });
 });

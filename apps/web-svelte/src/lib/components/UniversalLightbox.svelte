@@ -6,10 +6,10 @@
   import { positiveNumberValue } from "$lib/utils/format";
   import { createNavigationKeyHandler } from "$lib/keyboard/navigation-keyboard";
   import { CAPABILITY_KIND, ENTITY_KIND } from "$lib/entities/entity-codes";
-  import { PLAYBACK_MODE } from "$lib/api/generated/codes";
   import NsfwBlur from "./nsfw/NsfwBlur.svelte";
   import UniversalLightboxChrome from "./UniversalLightboxChrome.svelte";
-  import VideoPlayer, { type VideoPlayerHandle } from "./VideoPlayer.svelte";
+  import UniversalLightboxVideoStage from "./UniversalLightboxVideoStage.svelte";
+  import type { VideoPlayerHandle } from "./VideoPlayer.svelte";
   import {
     buildLightboxImageSources,
     buildLightboxPreloadSources,
@@ -76,6 +76,9 @@
   let videoIntrinsicW = $state(0);
   let videoIntrinsicH = $state(0);
   let warmedImages = $state<Record<string, WarmedImageDimensions>>({});
+  let loadedEntityId = $state<string | null>(null);
+  let loadedEntityImageSrc = $state<string | null>(null);
+  let failedPosterSrcs = $state<Record<string, boolean>>({});
   let imageSourceIndex = $state(0);
   let imageSourcesExhausted = $state(false);
   let stripThumbEls: Array<HTMLButtonElement | undefined> = $state([]);
@@ -108,23 +111,41 @@
   const currentMediaKey = $derived(current ? `${current.id}:${currentImageSource?.src ?? primaryVideoSource?.src ?? ""}` : null);
   const hasCurrentVideoPlayback = $derived(Boolean(isCurrentVideo && currentVideoSources.length > 0));
   const primaryVideoCodec = $derived(primaryVideoSource?.quality === "original" ? currentTechnical?.codec : null);
-  const currentVideoFit = $derived.by(() => {
-    const width =
-      positiveNumberValue(currentTechnical?.width) ??
-      positiveNumberValue(videoIntrinsicW) ??
-      positiveNumberValue(current?.initialAspectRatio?.width);
-    const height =
-      positiveNumberValue(currentTechnical?.height) ??
-      positiveNumberValue(videoIntrinsicH) ??
-      positiveNumberValue(current?.initialAspectRatio?.height);
-    if (!width || !height) return null;
-
-    return {
-      aspectRatio: `${width} / ${height}`,
-      widthToHeightRatio: width / height,
-    };
-  });
   const fallbackPoster = $derived(current?.coverUrl ?? undefined);
+  const primaryImageLoaded = $derived(
+    Boolean(!isCurrentVideo && currentImageSource && warmedImages[currentImageSource.src]),
+  );
+  const stillPosterSrc = $derived.by((): string | null => {
+    if (isCurrentVideo || imageSourcesExhausted || !current || !currentImageSource) return null;
+    if (primaryImageLoaded) return null;
+
+    if (
+      loadedEntityId === current.id &&
+      loadedEntityImageSrc &&
+      loadedEntityImageSrc !== currentImageSource.src &&
+      !failedPosterSrcs[loadedEntityImageSrc]
+    ) {
+      return loadedEntityImageSrc;
+    }
+
+    const warmedAlternate = currentImageSources.find(
+      (source) =>
+        source.src !== currentImageSource.src &&
+        Boolean(warmedImages[source.src]) &&
+        !failedPosterSrcs[source.src],
+    );
+    if (warmedAlternate) return warmedAlternate.src;
+
+    if (
+      fallbackPoster &&
+      fallbackPoster !== currentImageSource.src &&
+      !failedPosterSrcs[fallbackPoster]
+    ) {
+      return fallbackPoster;
+    }
+
+    return null;
+  });
   const preloadSources = $derived(buildLightboxPreloadSources(entities, index, { preferOriginal: true }));
   const preloadImageSources = $derived(
     preloadSources.filter((source) => source.as === "image").map((source) => source.src),
@@ -149,22 +170,7 @@
     el.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
   });
 
-  $effect(() => {
-    if (!current) return;
-    if (activeEntityId !== current.id) {
-      activeEntityId = current.id;
-      imageSourceIndex = 0;
-      imageSourcesExhausted = false;
-    }
-    if (activeMediaKey === currentMediaKey) return;
-    activeMediaKey = currentMediaKey;
-
-    const warmed = !isCurrentVideo && currentImageSource
-      ? untrack(() => warmedImages[currentImageSource.src])
-      : undefined;
-    ready = isCurrentVideo || Boolean(warmed);
-    naturalW = positiveNumberValue(currentTechnical?.width) ?? warmed?.width ?? 0;
-    naturalH = positiveNumberValue(currentTechnical?.height) ?? warmed?.height ?? 0;
+  function resetStagePlaybackAndTransform() {
     translateX = 0;
     translateY = 0;
     scale = 1;
@@ -181,8 +187,83 @@
     videoIntrinsicH = 0;
     videoPlayerHandle = undefined;
     nativeVideoEl = undefined;
-    if (warmed) {
-      scheduleFitForCurrentMedia(currentMediaKey);
+  }
+
+  $effect(() => {
+    if (!current) return;
+    const isNewEntity = activeEntityId !== current.id;
+    if (isNewEntity) {
+      activeEntityId = current.id;
+      imageSourceIndex = 0;
+      imageSourcesExhausted = false;
+    }
+    if (activeMediaKey === currentMediaKey) return;
+    activeMediaKey = currentMediaKey;
+
+    const warmed = !isCurrentVideo && currentImageSource
+      ? untrack(() => warmedImages[currentImageSource.src])
+      : undefined;
+    const posterSrc = untrack(() => stillPosterSrc);
+    const posterWarmed = !isCurrentVideo && posterSrc
+      ? untrack(() => warmedImages[posterSrc])
+      : undefined;
+
+    const prevW = untrack(() => naturalW);
+    const prevH = untrack(() => naturalH);
+    const nextW =
+      positiveNumberValue(currentTechnical?.width) ??
+      warmed?.width ??
+      posterWarmed?.width ??
+      (isNewEntity ? 0 : prevW);
+    const nextH =
+      positiveNumberValue(currentTechnical?.height) ??
+      warmed?.height ??
+      posterWarmed?.height ??
+      (isNewEntity ? 0 : prevH);
+
+    if (isNewEntity) {
+      ready = isCurrentVideo || Boolean(warmed) || Boolean(posterWarmed);
+      naturalW = nextW;
+      naturalH = nextH;
+      resetStagePlaybackAndTransform();
+      if (warmed || posterWarmed) {
+        scheduleFitForCurrentMedia(currentMediaKey);
+      }
+      return;
+    }
+
+    // Same entity updated (e.g. hydration upgraded cover -> source, fallback
+    // advanced after an error, or an image entity resolved to video): keep the
+    // visible preview on screen while the higher-resolution source loads.
+    const wasReady = untrack(() => ready);
+    const currentScale = untrack(() => scale);
+    const currentFitScale = untrack(() => fitScale);
+    const zoomed = !isCurrentVideo && wasReady && isZoomedBeyondFit(currentScale, currentFitScale);
+
+    naturalW = nextW;
+    naturalH = nextH;
+    ready = wasReady || isCurrentVideo || Boolean(warmed) || Boolean(posterWarmed);
+
+    if (isCurrentVideo) {
+      resetStagePlaybackAndTransform();
+      return;
+    }
+
+    if (zoomed && prevW > 0 && nextW > 0 && prevW !== nextW) {
+      const nextFit = computeFitScale(nextW, nextH);
+      if (nextFit != null) fitScale = nextFit;
+      scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE * fitScale, currentScale * (prevW / nextW)));
+      clampTranslate(false);
+    } else if (!zoomed && (warmed || posterWarmed || wasReady)) {
+      const nextFit = untrack(() => computeFitScale(nextW, nextH));
+      if (nextFit != null) {
+        fitScale = nextFit;
+        scale = nextFit;
+        translateX = 0;
+        translateY = 0;
+      } else {
+        scheduleFitForCurrentMedia(currentMediaKey);
+      }
     }
   });
 
@@ -195,7 +276,9 @@
 
   $effect(() => {
     if (!current || isCurrentVideo || ready || !currentImageSource) return;
-    const warmed = warmedImages[currentImageSource.src];
+    const warmed =
+      warmedImages[currentImageSource.src] ??
+      (stillPosterSrc ? warmedImages[stillPosterSrc] : undefined);
     if (!warmed) return;
     naturalW = naturalW || positiveNumberValue(currentTechnical?.width) || warmed.width;
     naturalH = naturalH || positiveNumberValue(currentTechnical?.height) || warmed.height;
@@ -238,14 +321,22 @@
     translateY = clamped.y;
   }
 
+  function computeFitScale(width: number, height: number): number | null {
+    if (!stageEl || !width || !height) return null;
+    const rect = stageEl.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    return Math.min((rect.width * 0.98) / width, (rect.height * 0.98) / height, MAX_SCALE);
+  }
+
   function applyFit() {
     if (!stageEl || !naturalW || !naturalH) return;
-    const rect = stageEl.getBoundingClientRect();
-    const next = Math.min((rect.width * 0.98) / naturalW, (rect.height * 0.98) / naturalH, MAX_SCALE);
-    fitScale = next;
-    scale = next;
-    translateX = 0;
-    translateY = 0;
+    const next = computeFitScale(naturalW, naturalH);
+    if (next != null) {
+      fitScale = next;
+      scale = next;
+      translateX = 0;
+      translateY = 0;
+    }
     ready = true;
   }
 
@@ -288,12 +379,59 @@
     }
   }
 
+  function applyLoadedDimensions(nextW: number, nextH: number) {
+    const prevW = naturalW;
+    const wasReady = ready;
+    const zoomed = wasReady && isZoomedBeyondFit(scale, fitScale);
+
+    naturalW = nextW;
+    naturalH = nextH;
+
+    if (!wasReady || !zoomed) {
+      applyFit();
+      return;
+    }
+
+    if (prevW > 0 && nextW > 0 && prevW !== nextW) {
+      const nextFit = computeFitScale(nextW, nextH);
+      if (nextFit != null) fitScale = nextFit;
+      scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE * fitScale, scale * (prevW / nextW)));
+      clampTranslate(false);
+    }
+  }
+
   function handleImageLoad(event: Event) {
     const el = event.currentTarget as HTMLImageElement;
-    naturalW = el.naturalWidth || naturalW || 1;
-    naturalH = el.naturalHeight || naturalH || 1;
-    rememberWarmedImage(el.getAttribute("src") ?? currentImageSource?.src, naturalW, naturalH);
-    applyFit();
+    const src = el.getAttribute("src") ?? currentImageSource?.src ?? null;
+    const nextW = el.naturalWidth || naturalW || 1;
+    const nextH = el.naturalHeight || naturalH || 1;
+    rememberWarmedImage(src, nextW, nextH);
+    if (current) {
+      loadedEntityId = current.id;
+      loadedEntityImageSrc = src;
+    }
+    applyLoadedDimensions(nextW, nextH);
+  }
+
+  function handlePosterImageLoad(event: Event) {
+    const el = event.currentTarget as HTMLImageElement;
+    const src = el.getAttribute("src") ?? stillPosterSrc ?? null;
+    const nextW = el.naturalWidth || naturalW || 1;
+    const nextH = el.naturalHeight || naturalH || 1;
+    rememberWarmedImage(src, nextW, nextH);
+    if (!ready) {
+      const resolvedW = positiveNumberValue(currentTechnical?.width) ?? nextW;
+      const resolvedH = positiveNumberValue(currentTechnical?.height) ?? nextH;
+      applyLoadedDimensions(resolvedW, resolvedH);
+    }
+  }
+
+  function handlePosterImageError(event: Event) {
+    const el = event.currentTarget as HTMLImageElement;
+    const src = el.getAttribute("src");
+    if (src) {
+      failedPosterSrcs = { ...failedPosterSrcs, [src]: true };
+    }
   }
 
   function handleImageError() {
@@ -304,33 +442,6 @@
 
     imageSourcesExhausted = true;
     ready = true;
-  }
-
-  function rememberVideoDimensions(video: HTMLVideoElement | null | undefined) {
-    videoIntrinsicW = video?.videoWidth || videoIntrinsicW;
-    videoIntrinsicH = video?.videoHeight || videoIntrinsicH;
-  }
-
-  function handleVideoCanPlay() {
-    rememberVideoDimensions(stageEl?.querySelector("video"));
-    videoReady = true;
-  }
-
-  async function handleNativeVideoCanPlay(event: Event) {
-    const video = event.currentTarget as HTMLVideoElement;
-    rememberVideoDimensions(video);
-    videoReady = true;
-    if (!video.paused) return;
-    try {
-      await video.play();
-    } catch {
-      // Muted autoplay is requested declaratively as well; native controls remain available
-      // if a browser policy still requires an explicit user gesture.
-    }
-  }
-
-  function handleNativeVolumeChange(event: Event) {
-    videoMuted = (event.currentTarget as HTMLVideoElement).muted;
   }
 
   const gestureHandler = createLightboxGestureHandler({
@@ -517,63 +628,31 @@
             style:opacity={ready ? 1 : 0}
           >
             <NsfwBlur isNsfw={current.isNsfw === true} class="lightbox-media-guard">
-              {#if usesNativeAnimatedVideo && currentVideoSources.length > 0}
-                <div
-                  class="lightbox-video-shell"
-                  class:has-natural-ratio={Boolean(currentVideoFit)}
-                  class:is-ready={videoReady}
-                  style={`--lightbox-video-aspect-ratio: ${currentVideoFit?.aspectRatio ?? "16 / 9"}; --lightbox-video-width-ratio: ${currentVideoFit?.widthToHeightRatio ?? 1.7777777778};`}
-                >
-                  {#if fallbackPoster}
-                    <img class="lightbox-video-poster" src={fallbackPoster} alt="" aria-hidden="true" />
-                  {/if}
-                  {#key currentMediaKey}
-                    <video
-                      bind:this={nativeVideoEl}
-                      class="lightbox-native-video"
-                      controls
-                      autoplay
-                      loop
-                      playsinline
-                      muted={videoMuted}
-                      poster={fallbackPoster}
-                      onloadedmetadata={handleNativeVideoCanPlay}
-                      oncanplay={handleNativeVideoCanPlay}
-                      onvolumechange={handleNativeVolumeChange}
-                    >
-                      {#each currentVideoSources as source (`${source.quality}:${source.src}`)}
-                        <source src={source.src} type={source.type ?? undefined} />
-                      {/each}
-                    </video>
-                  {/key}
-                </div>
-              {:else if isCurrentVideo && primaryVideoSource}
-                <div
-                  class="lightbox-video-shell"
-                  class:has-natural-ratio={Boolean(currentVideoFit)}
-                  class:is-ready={videoReady}
-                  style={`--lightbox-video-aspect-ratio: ${currentVideoFit?.aspectRatio ?? "16 / 9"}; --lightbox-video-width-ratio: ${currentVideoFit?.widthToHeightRatio ?? 1.7777777778};`}
-                >
-                  {#if fallbackPoster}
-                    <img class="lightbox-video-poster" src={fallbackPoster} alt="" aria-hidden="true" />
-                  {/if}
-                  <VideoPlayer
-                    bind:handle={videoPlayerHandle}
-                    directSrc={primaryVideoSource.src}
-                    codec={primaryVideoCodec}
-                    sourceWidth={positiveNumberValue(currentTechnical?.width)}
-                    sourceHeight={positiveNumberValue(currentTechnical?.height)}
-                    poster={fallbackPoster}
-                    defaultPlaybackMode={PLAYBACK_MODE.direct}
-                    showCastControls={false}
-                    chrome="minimal"
-                    enableKeyboardShortcuts={false}
-                    initialMuted={videoMuted}
-                    onCanPlay={handleVideoCanPlay}
-                    autoPlay
-                    autoRepeat
-                  />
-                </div>
+              {#if (usesNativeAnimatedVideo && currentVideoSources.length > 0) || (isCurrentVideo && primaryVideoSource)}
+                <UniversalLightboxVideoStage
+                  {usesNativeAnimatedVideo}
+                  videoSources={currentVideoSources}
+                  {primaryVideoSource}
+                  mediaKey={currentMediaKey}
+                  technicalWidth={currentTechnical?.width}
+                  technicalHeight={currentTechnical?.height}
+                  initialAspectRatio={current.initialAspectRatio}
+                  {primaryVideoCodec}
+                  {fallbackPoster}
+                  {videoMuted}
+                  {videoReady}
+                  {videoIntrinsicW}
+                  {videoIntrinsicH}
+                  bind:nativeVideoEl
+                  bind:videoPlayerHandle
+                  {stageEl}
+                  onMutedChange={(muted) => (videoMuted = muted)}
+                  onReadyChange={(isReady) => (videoReady = isReady)}
+                  onDimensionsChange={(width, height) => {
+                    videoIntrinsicW = width;
+                    videoIntrinsicH = height;
+                  }}
+                />
               {:else if isCurrentVideo && fallbackPoster}
                 <img
                   bind:this={imageEl}
@@ -590,18 +669,35 @@
               {:else if imageSourcesExhausted}
                 <div class="unsupported">The original file and available previews could not be loaded</div>
               {:else if currentImageSource}
-                <img
-                  bind:this={imageEl}
-                  src={currentImageSource.src}
-                  alt={current.title}
-                  class="lightbox-image"
-                  referrerpolicy="no-referrer"
-                  style:width={naturalW ? `${naturalW}px` : undefined}
-                  style:height={naturalH ? `${naturalH}px` : undefined}
-                  onload={handleImageLoad}
-                  onerror={handleImageError}
-                  draggable="false"
-                />
+                {#key current.id}
+                  <div class="lightbox-image-shell">
+                    {#if stillPosterSrc}
+                      <img
+                        src={stillPosterSrc}
+                        alt=""
+                        aria-hidden="true"
+                        class="lightbox-image-poster"
+                        referrerpolicy="no-referrer"
+                        onload={handlePosterImageLoad}
+                        onerror={handlePosterImageError}
+                        draggable="false"
+                      />
+                    {/if}
+                    <img
+                      bind:this={imageEl}
+                      src={currentImageSource.src}
+                      alt={current.title}
+                      class="lightbox-image"
+                      class:is-pending={Boolean(stillPosterSrc) && !primaryImageLoaded}
+                      referrerpolicy="no-referrer"
+                      style:width={naturalW ? `${naturalW}px` : undefined}
+                      style:height={naturalH ? `${naturalH}px` : undefined}
+                      onload={handleImageLoad}
+                      onerror={handleImageError}
+                      draggable="false"
+                    />
+                  </div>
+                {/key}
               {:else}
                 <div class="unsupported">No displayable media source</div>
               {/if}
@@ -720,103 +816,30 @@
     height: 100%;
   }
 
-  .media-frame :global(.prismedia-player-surface) {
-    border: 0;
-    background: transparent;
-  }
-
-  .media-frame :global([data-testid="vidstack-video-player"]) {
-    aspect-ratio: inherit;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    height: auto;
-    max-width: 100%;
-    max-height: 100%;
-  }
-
-  .media-frame :global([data-testid="vidstack-video-player"] .prismedia-player-surface) {
-    width: 100%;
-    height: auto;
-    max-height: 100%;
-    aspect-ratio: inherit;
-  }
-
-  .media-frame :global(.prismedia-media-engine) {
-    width: 100%;
-    height: auto;
-    max-width: 100%;
-    max-height: 100%;
-    aspect-ratio: inherit;
-  }
-
-  .lightbox-video-shell {
-    --lightbox-video-aspect-ratio: 16 / 9;
-    --lightbox-video-max-height: calc((100dvh - 10rem) * 0.98);
-    --lightbox-video-width-ratio: 1.7777777778;
+  .lightbox-image-shell {
     position: relative;
     display: flex;
-    width: min(98dvw, 100%, calc(var(--lightbox-video-max-height) * var(--lightbox-video-width-ratio)));
-    max-width: min(98dvw, 100%);
-    height: auto;
-    max-height: min(98%, var(--lightbox-video-max-height));
-    aspect-ratio: var(--lightbox-video-aspect-ratio);
     align-items: center;
     justify-content: center;
-    background: #000;
   }
 
-  .lightbox-video-shell.has-natural-ratio {
-    width: min(98dvw, 100%, calc(var(--lightbox-video-max-height) * var(--lightbox-video-width-ratio)));
-  }
-
-  .lightbox-video-poster {
+  .lightbox-image-poster {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
+    max-width: none;
     object-fit: contain;
-    opacity: 1;
-    transition: opacity 160ms ease;
-    /* The poster stacks above the in-flow video; once faded out it must not swallow
-       the hover and clicks that reveal and drive the native controls. */
     pointer-events: none;
-  }
-
-  .lightbox-video-shell :global([data-testid="vidstack-video-player"]) {
-    width: 100%;
-    max-width: 100%;
-    height: auto;
-    opacity: 0;
-    transition: opacity 160ms ease;
-  }
-
-  .lightbox-native-video {
-    width: 100%;
-    max-width: 100%;
-    height: 100%;
-    max-height: 100%;
-    object-fit: contain;
-    opacity: 0;
-    transition: opacity 160ms ease;
-  }
-
-  .lightbox-video-shell.is-ready .lightbox-native-video {
-    opacity: 1;
-  }
-
-  .lightbox-video-shell.is-ready :global([data-testid="vidstack-video-player"]) {
-    opacity: 1;
-  }
-
-  .lightbox-video-shell.is-ready .lightbox-video-poster {
-    opacity: 0;
   }
 
   .lightbox-image {
     max-width: none;
     pointer-events: none;
+  }
+
+  .lightbox-image.is-pending {
+    opacity: 0;
   }
 
   .unsupported {

@@ -3,12 +3,12 @@
   import StatePlaceholder from "$lib/components/StatePlaceholder.svelte";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { CloudDownload, Info, Layers, SlidersHorizontal } from "@lucide/svelte";
   import EntityDetailPageState from "$lib/components/entities/EntityDetailPageState.svelte";
   import EntityDetailHeroDates from "$lib/components/entities/EntityDetailHeroDates.svelte";
   import { useEntityDetailPage } from "$lib/components/entities/entity-detail-page-controller.svelte";
-  import { fetchEntity, type EntityCardFull } from "$lib/api/entities";
+  import { fetchEntity, fetchEntityWithChildren, type EntityCardFull } from "$lib/api/entities";
   import { updateEntityRating } from "$lib/api/entity-mutations";
   import {
     getCapability,
@@ -44,6 +44,7 @@
     lightboxEntityFromCard,
     type UniversalLightboxEntity,
   } from "$lib/components/universal-lightbox-media";
+  import { selectLightboxCardsToHydrate } from "$lib/components/entities/entity-grid-lightbox";
   import { EntityViewingSession } from "$lib/entities/entity-viewing-session";
 
   let childCards = $state<EntityThumbnailCard[]>([]);
@@ -62,7 +63,7 @@
   const detail = useEntityDetailPage<EntityCardFull>({
     loadKey: () => currentGalleryId,
     load: async ({ signal }) => {
-      const nextGallery = await fetchEntity(currentGalleryId, { signal });
+      const nextGallery = await fetchEntityWithChildren(currentGalleryId, { signal });
       const [children, relationships] = await Promise.all([
         fetchOrderedEntityThumbnails(getAllChildIds(nextGallery), { signal }),
         hydrateStandardRelationshipCards(nextGallery, { signal }),
@@ -179,11 +180,20 @@
   });
 
   $effect(() => {
-    if (!lightboxOpen || lightboxCards.length === 0) return;
-    const currentCard = lightboxCards[lightboxIndex];
-    if (!currentCard || currentCard.entity.kind !== ENTITY_KIND.image) return;
-    if (hydratedLightboxEntities[currentCard.entity.id]) return;
-    void hydrateLightboxEntity(currentCard.entity.id);
+    if (!lightboxOpen) return;
+    const cards = lightboxCards;
+    const index = lightboxIndex;
+    untrack(() => {
+      for (const targetCard of selectLightboxCardsToHydrate(
+        cards,
+        index,
+        hydratedLightboxEntities,
+        lightboxHydrationInFlight,
+      )) {
+        if (targetCard.entity.kind !== ENTITY_KIND.image) continue;
+        void hydrateLightboxEntity(targetCard.entity.id);
+      }
+    });
   });
 
   function openImageLightbox(card: EntityThumbnailCard, visibleCards: EntityThumbnailCard[]) {
@@ -261,10 +271,13 @@
     lightboxHydrationInFlight = [...lightboxHydrationInFlight, entityId];
     try {
       const image = await fetchEntity(entityId);
+      if (!lightboxOpen || !lightboxCards.some((candidate) => candidate.entity.id === entityId)) return;
       hydratedLightboxEntities = {
         ...hydratedLightboxEntities,
         [entityId]: lightboxEntityFromEntity(image),
       };
+    } catch {
+      // Keep the card-derived entity payload so the lightbox stays usable offline or on transient errors.
     } finally {
       lightboxHydrationInFlight = lightboxHydrationInFlight.filter((id) => id !== entityId);
     }

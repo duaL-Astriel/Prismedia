@@ -61,6 +61,7 @@ public interface IEntityReadService {
     /// such as OPDS pass false so fileless request placeholders never reach external clients.
     /// </param>
     /// <param name="acquisitionStatus">When set, keeps entities whose latest linked acquisition has this status.</param>
+    /// <param name="tagIds">When set, keeps only entities linked to every specified tag entity ID.</param>
     Task<EntityListResponse> ListAsync(
         string? kind,
         string? query,
@@ -86,7 +87,8 @@ public interface IEntityReadService {
         bool? engaged = null,
         bool? orphaned = null,
         bool? wanted = null,
-        AcquisitionStatus? acquisitionStatus = null);
+        AcquisitionStatus? acquisitionStatus = null,
+        IReadOnlyList<Guid>? tagIds = null);
 
     /// <summary>
     /// Lists active entities using the generated query contract shared by the API and frontend.
@@ -117,7 +119,8 @@ public interface IEntityReadService {
             query.Engaged,
             query.Orphaned,
             query.Wanted,
-            query.AcquisitionStatus);
+            query.AcquisitionStatus,
+            query.TagIds);
 
     /// <summary>
     /// Reads one bounded, count-free shelf using the compact thumbnail projection. Dashboard and
