@@ -223,6 +223,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- Navigating between items in the image lightbox keeps the preview visible while the full-resolution image loads or hydrates, instead of turning the media invisible for several seconds after each step.
+
+- Opening an image or video from a person or tag detail page now opens the lightbox over that view with Next/Previous navigation scoped to that view's items, and closing the lightbox or navigated item keeps the user on or returns them to the originating person or tag page instead of redirecting to the top-level images or videos library.
+
 - Animated and video images opened in the lightbox keep their playback controls usable: after the controls auto-hide, hovering or tapping the video brings them back instead of leaving them hidden for good.
 
 - Video and audio playback volume and muted states are remembered in client storage across media changes, page reloads, and player transitions instead of resetting to 100%.

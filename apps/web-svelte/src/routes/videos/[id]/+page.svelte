@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { beforeNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
+  import { getBackHref } from "$lib/back-navigation";
   import {
     Captions,
     CloudDownload,
@@ -158,10 +159,10 @@
     capabilities: () => video?.capabilities,
     onChanged: () => detail.reload({ showLoading: false }),
     onStatusChanged: () => detail.reload({ showLoading: false }),
-    onPruned: () => goto(seriesRef ? `/series/${seriesRef.id}` : "/videos"),
+    onPruned: () => goto(getBackHref(page.url.searchParams, seriesRef ? `/series/${seriesRef.id}` : "/videos")),
   });
   const fileManagement = {
-    onDeleted: () => goto(seriesRef ? `/series/${seriesRef.id}` : "/videos"),
+    onDeleted: () => goto(getBackHref(page.url.searchParams, seriesRef ? `/series/${seriesRef.id}` : "/videos")),
     onReverted: () => refreshAfterManagedFileRevert(acq, () => detail.reload({ showLoading: false })),
   };
 

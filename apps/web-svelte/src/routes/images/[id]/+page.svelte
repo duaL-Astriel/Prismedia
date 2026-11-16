@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
+  import { getBackHref } from "$lib/back-navigation";
   import { onMount } from "svelte";
   import { CloudDownload, Info, SlidersHorizontal } from "@lucide/svelte";
   import EntityDetailPageState from "$lib/components/entities/EntityDetailPageState.svelte";
@@ -102,10 +103,10 @@
     entityId: () => image?.id,
     capabilities: () => image?.capabilities,
     onChanged: () => detail.reload({ showLoading: false }),
-    onPruned: () => goto("/images"),
+    onPruned: () => goto(getBackHref(page.url.searchParams, "/images")),
   });
   const fileManagement = {
-    onDeleted: () => goto("/images"),
+    onDeleted: () => goto(getBackHref(page.url.searchParams, "/images")),
     onReverted: () => refreshAfterManagedFileRevert(acq, () => detail.reload({ showLoading: false })),
   };
   const detailSections = $derived.by((): EntityDetailSection[] => [
@@ -131,7 +132,7 @@
   ]);
 
   function closeLightbox() {
-    void goto("/images");
+    void goto(getBackHref(page.url.searchParams, "/images"));
   }
 </script>
 
