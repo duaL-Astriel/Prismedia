@@ -42,9 +42,9 @@
   import UniversalLightbox from "$lib/components/UniversalLightbox.svelte";
   import {
     lightboxEntityFromCard,
-    selectLightboxCardsToHydrate,
     type UniversalLightboxEntity,
   } from "$lib/components/universal-lightbox-media";
+  import { selectLightboxCardsToHydrate } from "$lib/components/entities/entity-grid-lightbox";
   import { EntityViewingSession } from "$lib/entities/entity-viewing-session";
 
   let childCards = $state<EntityThumbnailCard[]>([]);

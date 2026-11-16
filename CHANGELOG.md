@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- All media filter drawers now include a multi-select autocomplete Tags filter backed by server-side multi-tag intersection across `GET /api/entities` and `GET /api/entities/shelf`, with active tag chips, filter presets, and local detail-grid filtering.
+
 - Galleries without explicit cover artwork automatically fall back to projecting their first element's cover, and people, tags, and studios without uploaded artwork fall back to their first linked media item's artwork. In the lightbox details, users can explicitly set the open image as the gallery cover, and on person, tag, and studio detail pages, associated media cards offer an accessible action to set that media's artwork as the entity's cover. Cards whose fallback media has no generated thumbnail show the placeholder instead of a broken image or local file path, and setting an image as a cover copies it into the served artwork cache.
 
 - In the universal lightbox, multi-touch pinch gestures scale images continuously around the touch focal point, double-tapping zooms into the tapped location as the view center, and double-tapping while zoomed resets back to fit scale. While zoomed beyond fit scale, dragging pans smoothly within clamped boundaries rather than triggering swipe navigation, preserving swipe navigation when at fit scale or at the pan edge.
@@ -227,6 +229,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - Navigating between items in the image lightbox keeps the preview visible while the full-resolution image loads or hydrates, instead of turning the media invisible for several seconds after each step.
 
+- Opening an image or video from a person or tag detail page now opens the lightbox over that view with Next/Previous navigation scoped to that view's items, and closing the lightbox or navigated item keeps the user on or returns them to the originating person or tag page instead of redirecting to the top-level images or videos library.
 - Animated and video images opened in the lightbox keep their playback controls usable: after the controls auto-hide, hovering or tapping the video brings them back instead of leaving them hidden for good.
 
 - Video and audio playback volume and muted states are remembered in client storage across media changes, page reloads, and player transitions instead of resetting to 100%.

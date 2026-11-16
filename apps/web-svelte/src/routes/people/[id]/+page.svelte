@@ -11,16 +11,22 @@
   import { RELATIONSHIP_CODE } from "$lib/api/generated/codes";
   import { getPersonProfileCapability } from "$lib/api/capabilities";
   import { entityCardToDetailCard, REFERENCE_STANDALONE_METADATA_SECTION_IDS, type EntityDetailCardFull } from "$lib/entities/entity-detail";
-  import { entityCardToThumbnailCard } from "$lib/entities/entity-grid";
-  import { resolveEntityHref } from "$lib/entities/entity-routes";
   import type { EntityThumbnailCard } from "$lib/entities/entity-thumbnail";
   import EntityDetail, {
     type EntityDetailActionButton,
   } from "$lib/components/entities/EntityDetail.svelte";
   import EntityGrid from "$lib/components/entities/EntityGrid.svelte";
+  import EntityGridLightbox from "$lib/components/entities/EntityGridLightbox.svelte";
+  import { GridLightboxController } from "$lib/components/entities/entity-grid-lightbox-controller.svelte";
+  import {
+    applyRatingToCards,
+    buildRelatedThumbnailCards,
+    isLightboxableCard,
+  } from "$lib/components/entities/entity-grid-lightbox";
   import { useIdentifyDetailAction } from "$lib/components/identify/use-identify-detail-action.svelte";
   import MetadataCard from "$lib/components/MetadataCard.svelte";
   let relatedCards = $state<EntityThumbnailCard[]>([]);
+  const gridLightbox = new GridLightboxController();
   let settingCoverEntityId = $state<string | null>(null);
   let settingCoverSuccessId = $state<string | null>(null);
 
@@ -41,6 +47,7 @@
   const detail = useEntityDetailPage<EntityCardFull>({
     loadKey: () => page.params.id ?? "",
     load: async ({ signal }) => {
+      gridLightbox.close();
       const id = page.params.id ?? "";
       const nextPerson = await fetchEntity(id, { signal });
       try {
@@ -48,8 +55,9 @@
           { referencedBy: id, relationshipCode: RELATIONSHIP_CODE.cast, limit: 1000 },
           { signal },
         );
-        relatedCards = response.items.map((item) =>
-          entityCardToThumbnailCard(item, resolveEntityHref(item.kind, item.id)),
+        relatedCards = buildRelatedThumbnailCards(
+          response.items,
+          `${page.url.pathname}${page.url.search}`,
         );
       } catch (error) {
         if (signal.aborted) throw error;
@@ -152,6 +160,8 @@
             prefsKey={`person-${person.id}-appearances`}
             emptyTitle="No appearances"
             emptyMessage="No content linked to this person."
+            canActivateCard={isLightboxableCard}
+            onCardActivate={(card, visibleCards) => gridLightbox.open(card, visibleCards)}
           >
             {#snippet cardAction(card)}
               <Button
@@ -182,6 +192,14 @@
     {/if}
   </EntityDetailPageState>
 </div>
+
+<EntityGridLightbox
+  controller={gridLightbox}
+  sharedKey={person ? `person-${person.id}` : undefined}
+  onRatingUpdated={(entityId, rating) => {
+    relatedCards = applyRatingToCards(relatedCards, entityId, rating);
+  }}
+/>
 
 <style>
   .detail-page { display: grid; gap: 1.25rem; padding: 0; max-width: none; margin: 0; }

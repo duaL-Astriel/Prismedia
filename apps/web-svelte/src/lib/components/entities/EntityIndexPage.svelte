@@ -13,9 +13,9 @@
   import { useNsfw } from "$lib/nsfw/store.svelte";
   import {
     lightboxEntityFromCard,
-    selectLightboxCardsToHydrate,
     type UniversalLightboxEntity,
   } from "$lib/components/universal-lightbox-media";
+  import { selectLightboxCardsToHydrate } from "./entity-grid-lightbox";
   import EntityGrid from "./EntityGrid.svelte";
   import NameInputDialog from "./NameInputDialog.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
