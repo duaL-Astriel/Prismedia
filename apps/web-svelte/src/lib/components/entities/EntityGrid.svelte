@@ -100,6 +100,11 @@
     maxScale?: number;
     minScale?: number;
     nsfwMode?: NsfwMode;
+    /**
+     * Optional predicate narrowing which cards invoke {@link onCardActivate} instead of following
+     * their default entity link. When omitted, every card uses {@link onCardActivate} if supplied.
+     */
+    canActivateCard?: (card: EntityThumbnailCard) => boolean;
     onCardActivate?: (card: EntityThumbnailCard, visibleCards: EntityThumbnailCard[]) => void;
     onLoadMore?: () => void | Promise<void>;
     onPageSizeChange?: (pageSize: number) => void;
@@ -152,6 +157,7 @@
     maxScale = 12,
     minScale = 2,
     nsfwMode,
+    canActivateCard,
     onCardActivate,
     onLoadMore,
     onPageSizeChange,
@@ -766,6 +772,7 @@
       hoverPreviewSuppressed={viewport.areHoverPreviewsSuppressed}
       {loading}
       {mediaWall}
+      {canActivateCard}
       {onCardActivate}
       onCardSelectedChange={updateSelection}
       {selectable}
