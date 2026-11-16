@@ -313,7 +313,8 @@
   </main>
 {:else}
   <div
-    class="flex min-h-dvh"
+    data-app-shell
+    class="flex h-dvh overflow-hidden overscroll-none"
     style:--prismedia-canvas-header-height="3.5rem"
     style:--prismedia-bottom-dock-padding={bottomDockPadding}
     style:--prismedia-mobile-nav-height="calc(3.65rem + max(1.25rem, env(safe-area-inset-bottom, 0px)))"
@@ -328,16 +329,16 @@
     <main
       bind:this={mainScroller}
       class={cn(
-        "flex flex-1 flex-col transition-[margin-left] duration-moderate",
+        "flex min-w-0 flex-1 flex-col overscroll-y-contain transition-[margin-left] duration-moderate",
         "h-[calc(100dvh-var(--prismedia-mobile-nav-height))] [scrollbar-gutter:stable] md:h-dvh",
-        downloadsWorkspace ? "overflow-hidden" : "overflow-y-auto",
+        downloadsWorkspace ? "overflow-hidden" : "overflow-x-hidden overflow-y-auto",
         chrome.sidebarCollapsed ? "md:ml-14" : "md:ml-60",
       )}
       style:transition-timing-function="var(--ease-mechanical)"
       style:padding-bottom="var(--prismedia-bottom-dock-padding)"
     >
       <CanvasHeader />
-      <div class={cn("flex-1 p-5", downloadsWorkspace && "min-h-0 overflow-hidden")}>
+      <div class={cn("min-w-0 flex-1 p-5", downloadsWorkspace && "min-h-0 overflow-hidden")}>
         {@render pageContent()}
       </div>
     </main>
