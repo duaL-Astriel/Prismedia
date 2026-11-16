@@ -84,4 +84,6 @@ export interface EntityThumbnail {
   /** @nullable */
   referenceCounts?: EntityKindCount[] | null;
   sharedSourceEpisodes?: EntitySharedSourceEpisode[];
+  /** @nullable */
+  singleReleaseEntityId?: string | null;
 }

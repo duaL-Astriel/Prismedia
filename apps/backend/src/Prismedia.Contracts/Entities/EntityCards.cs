@@ -94,6 +94,9 @@ public sealed record EntityListQuery {
 
     /// <summary>Filters to wanted placeholders (true), or excludes them (false). Null includes both.</summary>
     public bool? Wanted { get; init; }
+
+    /// <summary>Optional tag entity IDs that every returned entity must link to (all tags must match).</summary>
+    public IReadOnlyList<Guid>? TagIds { get; init; }
 }
 
 /// <summary>

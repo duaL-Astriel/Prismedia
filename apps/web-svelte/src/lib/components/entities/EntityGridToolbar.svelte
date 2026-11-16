@@ -1,16 +1,21 @@
 <script lang="ts">
+  import { browser } from "$app/environment";
   import { onMount } from "svelte";
   import type { FilterPreset } from "$lib/filter-presets";
   import { entityGridFilterFromId } from "$lib/entities/entity-grid";
+  import { ENTITY_GRID_MOBILE_QUERY } from "$lib/entities/entity-grid-display";
   import type {
     EntityGridFilterOption,
     EntityGridSort,
     EntityGridSortDir,
     EntityGridViewMode,
   } from "$lib/entities/entity-grid";
+  import type { EntityPickerItem } from "$lib/components/forms/EntityPicker.svelte";
   import EntityGridFilterDrawer from "./EntityGridFilterDrawer.svelte";
+  import EntityGridMobileRail from "./EntityGridMobileRail.svelte";
   import EntityGridToolbarActiveFilters from "./EntityGridToolbarActiveFilters.svelte";
   import EntityGridToolbarHero from "./EntityGridToolbarHero.svelte";
+  import { EntityGridMobileHeadroomController } from "./entity-grid-mobile-headroom.svelte";
   import { EntityGridToolbarCollapseController } from "./entity-grid-toolbar-collapse-controller.svelte";
 
   interface Props {
@@ -19,16 +24,24 @@
     /** Persisted collapse state for the secondary toolbar rows; seeds the initial view. */
     barsCollapsed?: boolean;
     canClearFilters: boolean;
+    /** Whether the toolbar docks as a sticky header; disables scroll headroom when static. */
+    dockControls?: boolean;
     /** When true, exposes the vertical feed view mode toggle. */
     enableFeedView?: boolean;
     drawerOpen: boolean;
     /** Kind code of the grid, used to offer kind-specific sorts (e.g. references for taxonomy). */
     entityKind?: string;
     filterOptions: EntityGridFilterOption[];
+    /** Whether tag autocomplete searches should suppress NSFW tags. */
+    hideNsfw?: boolean;
+    /** Resolved tag items keyed by tag ID, supplied by the parent EntityGrid. */
+    knownTags?: ReadonlyMap<string, EntityPickerItem>;
     /** Hide the book type/format chips (constrained views that already lock those filters). */
     lockBookFilters?: boolean;
     maxScale: number;
     minScale: number;
+    /** Explicit mobile layout override; defaults to matching `(max-width: 639.98px)`. */
+    mobile?: boolean;
     onActiveFilterIdsChange: (ids: string[]) => void;
     onApplyPreset: (preset: FilterPreset) => void;
     /** Fired when the user manually collapses/expands the secondary rows, so the state can persist. */
@@ -44,6 +57,8 @@
     onSortByChange: (sortBy: EntityGridSort) => void;
     onSortDirChange: (sortDir: EntityGridSortDir) => void;
     onReshuffle: () => void;
+    /** Reports newly picked tag items so parent toolbars can render full tag titles. */
+    onTagItemsKnown?: (items: EntityPickerItem[]) => void;
     onViewModeChange: (viewMode: EntityGridViewMode) => void;
     presets: FilterPreset[];
     mediaWall: boolean;
@@ -59,13 +74,17 @@
     activePresetId = null,
     barsCollapsed: initialBarsCollapsed = false,
     canClearFilters,
+    dockControls = true,
     enableFeedView = false,
     drawerOpen,
     entityKind,
     filterOptions,
+    hideNsfw = false,
+    knownTags,
     lockBookFilters = false,
     maxScale,
     minScale,
+    mobile: mobileOverride,
     onActiveFilterIdsChange,
     onApplyPreset,
     onBarsCollapsedChange,
@@ -80,6 +99,7 @@
     onSortByChange,
     onSortDirChange,
     onReshuffle,
+    onTagItemsKnown,
     onViewModeChange,
     presets,
     mediaWall,
@@ -90,6 +110,15 @@
     viewMode,
   }: Props = $props();
 
+  let shellEl = $state<HTMLDivElement | null>(null);
+  let mediaMatchesMobile = $state(
+    browser && typeof window.matchMedia === "function"
+      ? window.matchMedia(ENTITY_GRID_MOBILE_QUERY).matches
+      : false,
+  );
+  let mobilePinnedOpen = $state(false);
+
+  const isMobile = $derived(mobileOverride ?? mediaMatchesMobile);
   const activeFilters = $derived(
     activeFilterIds
       .map((id) => entityGridFilterFromId(id, filterOptions))
@@ -97,7 +126,7 @@
   );
 
   // The active-filter chip row is the secondary toolbar row that can be collapsed
-  // to keep the bar compact (especially on mobile). Selection actions live in the
+  // to keep the bar compact (especially on desktop). Selection actions live in the
   // grid's floating bar instead, so they are never collapsed or scrolled away.
   const hasCollapsibleRows = $derived(activeFilters.length > 0 || canClearFilters);
 
@@ -109,74 +138,156 @@
     (collapsed) => onBarsCollapsedChange?.(collapsed),
   );
 
-  onMount(() => collapse.connectScroll());
+  const headroom = new EntityGridMobileHeadroomController(
+    () => isMobile && dockControls,
+    () => drawerOpen || mobilePinnedOpen,
+  );
 
   const filterDrawerId = `${$props.id()}-filters`;
+
+  onMount(() => {
+    const cleanups: (() => void)[] = [];
+    if (mobileOverride === undefined && typeof window.matchMedia === "function") {
+      const mql = window.matchMedia(ENTITY_GRID_MOBILE_QUERY);
+      mediaMatchesMobile = mql.matches;
+      const onChange = (event: MediaQueryListEvent) => {
+        mediaMatchesMobile = event.matches;
+      };
+      mql.addEventListener("change", onChange);
+      cleanups.push(() => mql.removeEventListener("change", onChange));
+    }
+    cleanups.push(collapse.connectScroll());
+    return () => {
+      for (const cleanup of cleanups) cleanup();
+    };
+  });
+
+  $effect(() => {
+    void isMobile;
+    void dockControls;
+    void drawerOpen;
+    void mobilePinnedOpen;
+    headroom.sync();
+  });
+
+  $effect(() => {
+    if (!isMobile || !dockControls || !shellEl) return;
+    return headroom.connect(shellEl);
+  });
 </script>
 
-<div class="toolbar-shell">
-  <div class="toolbar-stack">
-    <EntityGridToolbarHero
-      activeFilterCount={activeFilterIds.length}
-      {activePresetId}
-      barsCollapsed={collapse.barsCollapsed}
-      {drawerOpen}
-      {enableFeedView}
-      {entityKind}
-      {filterDrawerId}
-      {hasCollapsibleRows}
-      {maxScale}
-      {mediaWall}
-      {minScale}
-      {onApplyPreset}
-      {onDeletePreset}
-      {onDrawerOpenChange}
-      {onMediaWallChange}
-      {onOverwritePreset}
-      {onQueryChange}
-      {onReshuffle}
-      {onSavePreset}
-      {onScaleChange}
-      {onSortByChange}
-      {onSortDirChange}
-      onToggleCollapse={() => collapse.toggle()}
-      {onViewModeChange}
-      {presets}
-      {query}
-      {scale}
-      {sortBy}
-      {sortDir}
-      {viewMode}
-    />
-
-    {#if !collapse.barsCollapsed && (activeFilters.length > 0 || canClearFilters)}
-      <EntityGridToolbarActiveFilters
-        {activeFilterIds}
-        {activeFilters}
-        {canClearFilters}
-        {onActiveFilterIdsChange}
-        {onClearFilters}
+<div bind:this={shellEl} class="toolbar-shell" class:is-mobile={isMobile}>
+  <div class="toolbar-stack" class:is-passthrough={isMobile && headroom.hidden}>
+    {#if isMobile}
+      <EntityGridMobileRail
+        activeFilterCount={activeFilterIds.length}
+        {activePresetId}
+        {drawerOpen}
+        {enableFeedView}
+        {entityKind}
+        hidden={headroom.hidden}
+        {maxScale}
+        {mediaWall}
+        {minScale}
+        {onApplyPreset}
+        {onDeletePreset}
+        {onDrawerOpenChange}
+        {onMediaWallChange}
+        {onOverwritePreset}
+        onPinnedChange={(pinned) => (mobilePinnedOpen = pinned)}
+        {onQueryChange}
+        {onReshuffle}
+        {onSavePreset}
+        {onScaleChange}
+        {onSortByChange}
+        {onSortDirChange}
+        {onViewModeChange}
+        {presets}
+        {query}
+        {scale}
+        {sortBy}
+        {sortDir}
+        {viewMode}
       />
-    {/if}
+    {:else}
+      <EntityGridToolbarHero
+        activeFilterCount={activeFilterIds.length}
+        {activePresetId}
+        barsCollapsed={collapse.barsCollapsed}
+        {drawerOpen}
+        {enableFeedView}
+        {entityKind}
+        {filterDrawerId}
+        {hasCollapsibleRows}
+        {maxScale}
+        {mediaWall}
+        {minScale}
+        {onApplyPreset}
+        {onDeletePreset}
+        {onDrawerOpenChange}
+        {onMediaWallChange}
+        {onOverwritePreset}
+        {onQueryChange}
+        {onReshuffle}
+        {onSavePreset}
+        {onScaleChange}
+        {onSortByChange}
+        {onSortDirChange}
+        onToggleCollapse={() => collapse.toggle()}
+        {onViewModeChange}
+        {presets}
+        {query}
+        {scale}
+        {sortBy}
+        {sortDir}
+        {viewMode}
+      />
 
-    {#if drawerOpen}
-      <div
-        id={filterDrawerId}
-        class="filter-drawer-panel"
-        role="region"
-        aria-label="Filter options"
-      >
-        <EntityGridFilterDrawer
+      {#if !collapse.barsCollapsed && (activeFilters.length > 0 || canClearFilters)}
+        <EntityGridToolbarActiveFilters
           {activeFilterIds}
-          {filterOptions}
-          {entityKind}
-          {lockBookFilters}
+          {activeFilters}
+          {canClearFilters}
           {onActiveFilterIdsChange}
+          {onClearFilters}
         />
-      </div>
+      {/if}
+
+      {#if drawerOpen}
+        <div
+          id={filterDrawerId}
+          class="filter-drawer-panel"
+          role="region"
+          aria-label="Filter options"
+        >
+          <EntityGridFilterDrawer
+            {activeFilterIds}
+            {filterOptions}
+            {entityKind}
+            {lockBookFilters}
+            {hideNsfw}
+            {knownTags}
+            {onTagItemsKnown}
+            {onActiveFilterIdsChange}
+          />
+        </div>
+      {/if}
     {/if}
   </div>
 </div>
+
+{#if isMobile && (activeFilters.length > 0 || canClearFilters)}
+  <div class="mobile-active-filters">
+    <EntityGridToolbarActiveFilters
+      standalone
+      {activeFilterIds}
+      {activeFilters}
+      {canClearFilters}
+      {onActiveFilterIdsChange}
+      {onClearFilters}
+    />
+  </div>
+{/if}
 
 <style>
   .toolbar-shell {
@@ -197,6 +308,10 @@
     --toolbar-page-accent: var(--page-accent, var(--entity-accent, #739b96));
   }
 
+  .toolbar-shell.is-mobile {
+    padding-top: 0.35rem;
+  }
+
   .toolbar-shell::before {
     display: none;
   }
@@ -207,6 +322,10 @@
     flex-direction: column;
     min-width: 0;
     pointer-events: auto;
+  }
+
+  .toolbar-stack.is-passthrough {
+    pointer-events: none;
   }
 
   /*
@@ -220,10 +339,13 @@
     right: 0;
     z-index: 2;
     max-height: max(
-      11rem,
-      calc(
-        100dvh - var(--prismedia-canvas-header-height, 3.5rem) -
-          var(--prismedia-mobile-bottom-clearance, 5rem) - 10rem
+      14rem,
+      min(
+        38rem,
+        calc(
+          100dvh - var(--prismedia-canvas-header-height, 3.5rem) -
+            var(--prismedia-desktop-bottom-clearance, 0px) - 11rem
+        )
       )
     );
     overflow-y: auto;
@@ -241,21 +363,6 @@
     box-shadow: none;
   }
 
-  @media (min-width: 768px) {
-    .filter-drawer-panel {
-      max-height: max(
-        14rem,
-        min(
-          38rem,
-          calc(
-            100dvh - var(--prismedia-canvas-header-height, 3.5rem) -
-              var(--prismedia-desktop-bottom-clearance, 0px) - 11rem
-          )
-        )
-      );
-    }
-  }
-
   .toolbar-stack :global(.toolbar-bar) {
     position: relative;
     display: flex;
@@ -269,4 +376,7 @@
     background: var(--toolbar-detail-glass);
   }
 
+  .mobile-active-filters {
+    min-width: 0;
+  }
 </style>

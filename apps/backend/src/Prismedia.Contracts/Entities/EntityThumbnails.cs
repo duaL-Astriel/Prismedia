@@ -169,6 +169,14 @@ public sealed record EntityThumbnail(
     /// Empty for non-episode entities and files that represent only one provider episode.
     /// </summary>
     public IReadOnlyList<EntitySharedSourceEpisode> SharedSourceEpisodes { get; init; } = [];
+
+    /// <summary>
+    /// Identifier of the sole visible structural <c>comic-installment</c> release beneath a
+    /// <c>comic-series</c> when the series contains a single release, or <c>null</c> otherwise.
+    /// Enables comic browse grids to route directly to single-release comics instead of a
+    /// one-item series overview.
+    /// </summary>
+    public Guid? SingleReleaseEntityId { get; init; }
 }
 
 /// <summary>API-facing grouped entities for child and relationship collections.</summary>

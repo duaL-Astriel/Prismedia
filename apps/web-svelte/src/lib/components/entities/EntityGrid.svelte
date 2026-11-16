@@ -5,9 +5,11 @@
   import { fly } from "svelte/transition";
   import { SvelteMap } from "svelte/reactivity";
   import { isNsfw, isWanted, withFlagCapability } from "$lib/api/capabilities";
+  import { fetchEntityThumbnails } from "$lib/api/entities";
   import { removeWantedEntities } from "$lib/api/requests";
   import type { EntityCapability } from "$lib/api/generated/model";
   import { updateEntityFlags } from "$lib/api/entity-mutations";
+  import type { EntityPickerItem } from "$lib/components/forms/EntityPicker.svelte";
   import { createFilterPresets, type FilterPreset } from "$lib/filter-presets";
   import { createEntityGridPrefs, type EntityGridPrefs } from "$lib/entities/entity-grid-prefs";
   import { usePageSnapshots } from "$lib/stores/page-snapshots.svelte";
@@ -17,15 +19,19 @@
     buildCapabilityFilterOptions,
     buildEntityKindTabs,
     entityGridRequestFromState,
+    tagFilterOption,
+    tagIdFromFilterId,
     type EntityGridRequest,
     type EntityGridSort,
     type EntityGridSortDir,
     type EntityGridViewMode,
     type EntityGridBulkAction,
   } from "$lib/entities/entity-grid";
+  import { ENTITY_GRID_MOBILE_QUERY } from "$lib/entities/entity-grid-display";
   import type { EntityThumbnailCard } from "$lib/entities/entity-thumbnail";
   import { isCollectionEntityType, type CollectionEntityType } from "$lib/collections/models";
   import BulkSelectionBar from "./BulkSelectionBar.svelte";
+  import EntityGridFilterSheet from "./EntityGridFilterSheet.svelte";
   import EntityGridContent from "./EntityGridContent.svelte";
   import EntityGridPagination from "./EntityGridPagination.svelte";
   import EntityGridTabs from "./EntityGridTabs.svelte";
@@ -47,7 +53,6 @@
   const DEFAULT_PAGE_SIZE = 100;
   const DEFAULT_PAGE_SIZE_OPTIONS = [100, 250, 500, 1000];
   const DEFAULT_DESKTOP_SCALE = 6;
-  const MOBILE_THUMBNAIL_QUERY = "(max-width: 639.98px)";
 
   interface Props {
     bulkActions?: EntityGridBulkAction[];
@@ -95,6 +100,11 @@
     maxScale?: number;
     minScale?: number;
     nsfwMode?: NsfwMode;
+    /**
+     * Optional predicate narrowing which cards invoke {@link onCardActivate} instead of following
+     * their default entity link. When omitted, every card uses {@link onCardActivate} if supplied.
+     */
+    canActivateCard?: (card: EntityThumbnailCard) => boolean;
     onCardActivate?: (card: EntityThumbnailCard, visibleCards: EntityThumbnailCard[]) => void;
     onLoadMore?: () => void | Promise<void>;
     onPageSizeChange?: (pageSize: number) => void;
@@ -147,6 +157,7 @@
     maxScale = 12,
     minScale = 2,
     nsfwMode,
+    canActivateCard,
     onCardActivate,
     onLoadMore,
     onPageSizeChange,
@@ -168,7 +179,7 @@
   function isMobileThumbnailViewport(): boolean {
     return browser &&
       typeof window.matchMedia === "function" &&
-      window.matchMedia(MOBILE_THUMBNAIL_QUERY).matches;
+      window.matchMedia(ENTITY_GRID_MOBILE_QUERY).matches;
   }
 
   function defaultScale(): number {
@@ -199,6 +210,9 @@
   const persistedPrefs: EntityGridPrefs | null = prefsStore ? prefsStore.load() : null;
 
   const capabilityOverrides = new SvelteMap<string, EntityCapability[]>();
+  /** Resolved tag items (picked in this session or hydrated from persisted filter IDs) for chip labels. */
+  const knownTags = new SvelteMap<string, EntityPickerItem>();
+  const attemptedTagLookups = new Set<string>();
   /** Wanted placeholders the server confirmed removed during this session. */
   let removedIds = $state(new Set<string>());
   /** Actionable durable-teardown failures for wanted cards that remain selected. */
@@ -206,6 +220,7 @@
   let activeKind = $state(persistedPrefs?.activeKind ?? ENTITY_GRID_ALL_KINDS);
   let activePresetId = $state<string | null>(persistedPrefs?.activePresetId ?? null);
   let drawerOpen = $state(false);
+  let isMobile = $state(isMobileThumbnailViewport());
   let filterIds = $state<string[]>(persistedPrefs?.filterIds ?? []);
   let includeNsfw = $state(persistedPrefs?.includeNsfw ?? true);
   let presets = $state<FilterPreset[]>([]);
@@ -253,7 +268,14 @@
     });
   });
   const tabs = $derived(buildEntityKindTabs(effectiveCards, { includeNsfw: gridState.includeNsfw }));
-  const filterOptions = $derived(buildCapabilityFilterOptions(effectiveCards, entityKind));
+  const baseFilterOptions = $derived(buildCapabilityFilterOptions(effectiveCards, entityKind));
+  const filterOptions = $derived.by(() => {
+    const activeTagOptions = filterIds
+      .map((id) => tagIdFromFilterId(id))
+      .filter((id): id is string => Boolean(id))
+      .map((id) => tagFilterOption(id, knownTags.get(id)?.title));
+    return activeTagOptions.length === 0 ? baseFilterOptions : [...baseFilterOptions, ...activeTagOptions];
+  });
   const visibleCards = $derived(
     applyEntityGridState(effectiveCards, gridState, filterOptions, {
       preserveServerResolvedSorts: Boolean(onRequestChange),
@@ -380,8 +402,49 @@
 
   onMount(viewport.connect);
 
+  onMount(() => {
+    if (!browser || typeof window.matchMedia !== "function") return;
+    const mql = window.matchMedia(ENTITY_GRID_MOBILE_QUERY);
+    isMobile = mql.matches;
+    const onChange = (event: MediaQueryListEvent) => {
+      isMobile = event.matches;
+    };
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  });
+
   $effect(() => {
     onRequestChange?.(request);
+  });
+
+  // Hydrate display titles for any persisted or preset tag filter IDs that were not
+  // picked interactively in the current session.
+  $effect(() => {
+    if (!browser) return;
+    const missingIds = filterIds
+      .map((id) => tagIdFromFilterId(id))
+      .filter((id): id is string => Boolean(id && !knownTags.has(id) && !attemptedTagLookups.has(id)));
+    if (missingIds.length === 0) return;
+    for (const id of missingIds) attemptedTagLookups.add(id);
+    let cancelled = false;
+    void fetchEntityThumbnails(missingIds, { hideNsfw: effectiveNsfwMode !== "show" })
+      .then((thumbnails) => {
+        if (cancelled) return;
+        for (const thumbnail of thumbnails) {
+          knownTags.set(thumbnail.id, {
+            id: thumbnail.id,
+            title: thumbnail.title,
+            thumbnailUrl: thumbnail.coverThumbUrl ?? thumbnail.coverUrl ?? null,
+            subtitle: thumbnail.subtitle ?? undefined,
+          });
+        }
+      })
+      .catch(() => {
+        // The fallback "Tag" label stays valid if thumbnail hydration fails.
+      });
+    return () => {
+      cancelled = true;
+    };
   });
 
   // Persist the full view state for this grid whenever a tracked control
@@ -431,6 +494,13 @@
     pagination.resetPage();
     selectedIds = [];
     onSelectionChange?.(selectedIds);
+  }
+
+  function recordKnownTagItems(items: EntityPickerItem[]) {
+    for (const item of items) {
+      knownTags.set(item.id, item);
+      attemptedTagLookups.add(item.id);
+    }
   }
 
   function setFilterIds(ids: string[]) {
@@ -639,14 +709,18 @@
     {activePresetId}
     {barsCollapsed}
     {canClearFilters}
+    {dockControls}
     {enableFeedView}
     {drawerOpen}
     {entityKind}
     {filterOptions}
+    hideNsfw={effectiveNsfwMode !== "show"}
+    {knownTags}
     {lockBookFilters}
     {maxScale}
     {mediaWall}
     {minScale}
+    mobile={isMobile}
     onActiveFilterIdsChange={setFilterIds}
     onApplyPreset={applyPreset}
     onBarsCollapsedChange={(collapsed) => (barsCollapsed = collapsed)}
@@ -661,6 +735,7 @@
     onSortByChange={setSortBy}
     onSortDirChange={setSortDir}
     onReshuffle={reshuffle}
+    onTagItemsKnown={recordKnownTagItems}
     onViewModeChange={setViewMode}
     {presets}
     {query}
@@ -676,6 +751,25 @@
         <p>{message}</p>
       {/each}
     </div>
+  {/if}
+
+  {#if isMobile}
+    <EntityGridFilterSheet
+      open={drawerOpen}
+      activeFilterIds={filterIds}
+      {filterOptions}
+      {entityKind}
+      {lockBookFilters}
+      hideNsfw={effectiveNsfwMode !== "show"}
+      {knownTags}
+      {canClearFilters}
+      totalCount={pagination.effectiveTotal}
+      totalIsExact={pagination.totalIsExact}
+      onOpenChange={(open) => (drawerOpen = open)}
+      onTagItemsKnown={recordKnownTagItems}
+      onActiveFilterIdsChange={setFilterIds}
+      onClearFilters={clearFilters}
+    />
   {/if}
 
   <EntityGridTabs
@@ -702,6 +796,7 @@
       hoverPreviewSuppressed={viewport.areHoverPreviewsSuppressed}
       {loading}
       {mediaWall}
+      {canActivateCard}
       {onCardActivate}
       onCardSelectedChange={updateSelection}
       {selectable}
@@ -787,6 +882,14 @@
   }
 
   :global(.entity-grid > :first-child + *) {
+    margin-top: 0;
+  }
+
+  :global(.entity-grid > .mobile-active-filters) {
+    margin-top: 0.35rem;
+  }
+
+  :global(.entity-grid > .mobile-active-filters + *) {
     margin-top: 0;
   }
 

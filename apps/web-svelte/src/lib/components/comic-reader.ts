@@ -1,6 +1,70 @@
 export type ComicPageMode = "single" | "double";
 export type ComicTapZone = "previous" | "controls" | "next";
 
+export const COMIC_FIT_MODE = {
+  screen: "screen",
+  width: "width",
+  height: "height",
+} as const;
+
+export type ComicFitMode = (typeof COMIC_FIT_MODE)[keyof typeof COMIC_FIT_MODE];
+
+export const COMIC_FIT_STORAGE_KEY = "prismedia:comic-reader:fit-mode";
+export const COMIC_MOBILE_FIT_MEDIA_QUERY = "(max-width: 639px)";
+
+/** Type guard for supported comic reader fit modes. */
+export function isComicFitMode(value: unknown): value is ComicFitMode {
+  return (
+    value === COMIC_FIT_MODE.screen
+    || value === COMIC_FIT_MODE.width
+    || value === COMIC_FIT_MODE.height
+  );
+}
+
+/**
+ * Resolves the device-aware default fit mode when no saved preference exists:
+ * mobile portrait screens default to fit-to-width for legible dialogue, while
+ * wider viewports default to fit-to-screen.
+ */
+export function defaultComicFitMode(isMobile?: boolean): ComicFitMode {
+  if (typeof isMobile === "boolean") {
+    return isMobile ? COMIC_FIT_MODE.width : COMIC_FIT_MODE.screen;
+  }
+  if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+    return window.matchMedia(COMIC_MOBILE_FIT_MEDIA_QUERY).matches
+      ? COMIC_FIT_MODE.width
+      : COMIC_FIT_MODE.screen;
+  }
+  return COMIC_FIT_MODE.screen;
+}
+
+/** Reads the per-device comic reader fit preference from localStorage, if valid. */
+export function readComicFitPreference(): ComicFitMode | null {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return null;
+    const raw = window.localStorage.getItem(COMIC_FIT_STORAGE_KEY);
+    return isComicFitMode(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persists the user's selected comic reader fit mode for this device. */
+export function writeComicFitPreference(mode: ComicFitMode): void {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    window.localStorage.setItem(COMIC_FIT_STORAGE_KEY, mode);
+  } catch {
+    // Private mode or disabled storage — fit preference falls back to session state.
+  }
+}
+
+/** Resolves the initial fit mode from an explicit override, saved preference, or device default. */
+export function resolveInitialComicFitMode(explicit?: ComicFitMode | null): ComicFitMode {
+  if (isComicFitMode(explicit)) return explicit;
+  return readComicFitPreference() ?? defaultComicFitMode();
+}
+
 export interface ComicReaderOptions {
   pageMode: ComicPageMode;
   firstPageIsCover: boolean;
