@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - The comic reader supports Fit to screen, Fit to width, and Fit to height display modes across both paged and webtoon layouts, defaulting to Fit to width on narrow mobile viewports and Fit to screen on desktop while remembering the selected preference per device.
 
+- All media filter drawers now include a multi-select autocomplete Tags filter backed by server-side multi-tag intersection across `GET /api/entities` and `GET /api/entities/shelf`, with active tag chips, filter presets, and local detail-grid filtering.
+
 - Galleries without explicit cover artwork automatically fall back to projecting their first element's cover, and people, tags, and studios without uploaded artwork fall back to their first linked media item's artwork. In the lightbox details, users can explicitly set the open image as the gallery cover, and on person, tag, and studio detail pages, associated media cards offer an accessible action to set that media's artwork as the entity's cover. Cards whose fallback media has no generated thumbnail show the placeholder instead of a broken image or local file path, and setting an image as a cover copies it into the served artwork cache.
 
 - In the universal lightbox, multi-touch pinch gestures scale images continuously around the touch focal point, double-tapping zooms into the tapped location as the view center, and double-tapping while zoomed resets back to fit scale. While zoomed beyond fit scale, dragging pans smoothly within clamped boundaries rather than triggering swipe navigation, preserving swipe navigation when at fit scale or at the pan edge.
@@ -108,6 +110,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - TV downloads held for manual import now open an expected-episode review: Prismedia prefills unambiguous matches, lets each episode choose a downloaded video, supports one video satisfying several episodes, and keeps the complete payload in a collapsed audit list. Potentially dangerous companion files are blocked from selection while verified media remains mappable behind an explicit safety confirmation. A held release can also be rejected to remove its download data, blocklist it, and immediately search again.
 
 ### Changed
+
+- In the Comics tab, clicking a comic that only has a single release opens that comic directly instead of showing an intermediate series overview.
 
 - Selecting items in library grids no longer needs a Select button. Hover a card to tick its checkbox (touch screens always show it). Once anything is selected, every card shows its checkbox and a click selects instead of opening, and a floating bar at the bottom of the screen holds Select all, Clear, and the bulk actions. The bar stays put while scrolling, so actions remain reachable on long pages, and it disappears when the selection is cleared. The Identify page's queue button moves into the same bar.
 
@@ -225,6 +229,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- Mobile web browsers can no longer scroll the outer document past the app shell and push the sticky top header out of view; page scrolling stays contained within the main content area.
+
+- Navigating between items in the image lightbox keeps the preview visible while the full-resolution image loads or hydrates, instead of turning the media invisible for several seconds after each step.
+
+- Gallery, series, season, album, artist, author, book, and comic pages list every item again instead of stopping at the first 250 of each kind. Next and previous in the reader, and Identify reviews of large series, include every item too.
+
+- Opening an image or video from a person or tag detail page now opens the lightbox over that view with Next/Previous navigation scoped to that view's items, and closing the lightbox or navigated item keeps the user on or returns them to the originating person or tag page instead of redirecting to the top-level images or videos library.
+
 - Animated and video images opened in the lightbox keep their playback controls usable: after the controls auto-hide, hovering or tapping the video brings them back instead of leaving them hidden for good.
 
 - Video and audio playback volume and muted states are remembered in client storage across media changes, page reloads, and player transitions instead of resetting to 100%.
@@ -238,6 +250,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Held movie imports now let you choose and accept a video file, and held album or track imports let you map downloaded audio to the requested tracks while retaining their titles and order. Reviewed choices survive worker retries. Video quality checks ignore attached cover art, honor the default video stream, and recognize full-height narrow video; warnings identify the checked file and its dimensions.
 
 - Switching from reading to listening at the beginning of an EPUB chapter keeps the correct chapter even when its saved percentage rounds down.
+
+- Continue reading on a Book with a matched audiobook no longer jumps back to an older listening spot, and then saves over your reading position, when an app or browser reopens a paused audiobook and re-sends where it stopped. Only listening that actually moves now counts as newer than reading.
 
 - Request, Identify, and Files pages inside the iOS app now scroll as one page from anywhere, including drags that start on buttons, and render every row. Content stays clear of the status bar and tab bar, toolbars pin below the status bar, and Files fills the space between the bars.
 - Accepting an Identify proposal keeps the review and its progress on screen until the next page opens, instead of briefly showing the search view or a loader.

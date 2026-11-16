@@ -23,6 +23,8 @@
 
   interface Props {
     cards: EntityThumbnailCard[];
+    /** Optional predicate narrowing which cards invoke {@link onActivate} instead of linking. */
+    canActivate?: (card: EntityThumbnailCard) => boolean;
     /**
      * Invoked when a feed item is tapped. When provided (image route) the feed is
      * purely visual and a tap opens the shared lightbox. When omitted (galleries)
@@ -36,7 +38,7 @@
     mediaWall?: boolean;
   }
 
-  let { cards, onActivate, mediaWall = false }: Props = $props();
+  let { cards, canActivate, onActivate, mediaWall = false }: Props = $props();
 
   // How many items on either side of the centered item keep a live, autoplaying
   // player mounted. The centered item plus these neighbours stay "always playing"
@@ -317,7 +319,8 @@
   style:--feed-max-h={maxMediaHeight ? `${maxMediaHeight}px` : undefined}
 >
   {#each cards as card, index (card.entity.id)}
-    {@const href = onActivate ? undefined : resolveEntityThumbnailHref(card)}
+    {@const activatable = Boolean(onActivate && (!canActivate || canActivate(card)))}
+    {@const href = activatable ? undefined : resolveEntityThumbnailHref(card)}
     {@const cover = card.cover}
     {@const showVideo = isWithinWindow(index) && isVideoCard(card)}
     {@const source = showVideo ? videoSourceFor(card, index === activeIndex) : null}
@@ -391,7 +394,7 @@
 
         <!-- Capture taps above the player so the feed stays purely visual: a tap
              opens the lightbox (or links to the entity) rather than toggling play. -->
-        {#if onActivate}
+        {#if activatable}
           <Button variant="ghost"
             class="absolute inset-0 z-2 block size-full rounded-none border-0 p-0 hover:bg-transparent"
             aria-label={`Open ${card.entity.title}`}
