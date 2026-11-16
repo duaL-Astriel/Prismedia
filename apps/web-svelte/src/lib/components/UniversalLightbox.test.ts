@@ -457,4 +457,69 @@ describe("UniversalLightbox", () => {
     expect(mediaFrame.style.transform).toContain("scale(2.45)");
   });
 
+  it("keeps navigated images visible via their cover preview when hydration upgrades to the original source", async () => {
+    const unhydratedSecond: UniversalLightboxEntity = {
+      id: "image-2",
+      kind: "image",
+      title: "Second",
+      capabilities: [],
+      coverUrl: "/assets/images/image-2/thumb.jpg",
+    };
+
+    const { rerender } = render(UniversalLightboxHarness, {
+      props: { entities: [still, unhydratedSecond], initialIndex: 0, onClose: vi.fn() },
+    });
+
+    await fireEvent.load(document.querySelector("img.lightbox-image") as HTMLImageElement);
+    await fireEvent.keyDown(window, { key: "ArrowRight" });
+    await tick();
+
+    const preview = document.querySelector("img.lightbox-image") as HTMLImageElement;
+    expect(preview).toHaveAttribute("src", "/assets/images/image-2/thumb.jpg");
+    await fireEvent.load(preview);
+    await tick();
+
+    const mediaFrame = document.querySelector("[data-lightbox-media]") as HTMLElement;
+    expect(mediaFrame).toHaveStyle({ opacity: "1" });
+
+    // Hydration arrives with full file capabilities and switches the primary src to files/source.
+    await rerender({ entities: [still, second], initialIndex: 0, onClose: vi.fn() });
+    await tick();
+
+    const fullRes = document.querySelector("img.lightbox-image") as HTMLImageElement;
+    const poster = document.querySelector("img.lightbox-image-poster") as HTMLImageElement;
+    expect(fullRes).toHaveAttribute("src", "/api/entities/image-2/files/source");
+    expect(fullRes).toHaveClass("is-pending");
+    expect(poster).toHaveAttribute("src", "/assets/images/image-2/thumb.jpg");
+    expect(mediaFrame).toHaveStyle({ opacity: "1" });
+
+    await fireEvent.load(fullRes);
+    await tick();
+
+    expect(fullRes).not.toHaveClass("is-pending");
+    expect(document.querySelector("img.lightbox-image-poster")).toBeNull();
+    expect(mediaFrame).toHaveStyle({ opacity: "1" });
+  });
+
+  it("shows the cover poster immediately when navigating to a hydrated image whose original source is still loading", async () => {
+    render(UniversalLightboxHarness, {
+      props: { entities: [still, second], initialIndex: 0, onClose: vi.fn() },
+    });
+
+    await fireEvent.keyDown(window, { key: "ArrowRight" });
+    await tick();
+
+    const poster = document.querySelector("img.lightbox-image-poster") as HTMLImageElement;
+    const fullRes = document.querySelector("img.lightbox-image") as HTMLImageElement;
+    expect(poster).toHaveAttribute("src", "/assets/images/image-2/thumb.jpg");
+    expect(fullRes).toHaveAttribute("src", "/api/entities/image-2/files/source");
+    expect(fullRes).toHaveClass("is-pending");
+
+    await fireEvent.load(poster);
+    await tick();
+
+    const mediaFrame = document.querySelector("[data-lightbox-media]") as HTMLElement;
+    expect(mediaFrame).toHaveStyle({ opacity: "1" });
+  });
+
 });
