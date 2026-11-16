@@ -6,10 +6,10 @@
   import { positiveNumberValue } from "$lib/utils/format";
   import { createNavigationKeyHandler } from "$lib/keyboard/navigation-keyboard";
   import { CAPABILITY_KIND, ENTITY_KIND } from "$lib/entities/entity-codes";
-  import { PLAYBACK_MODE } from "$lib/api/generated/codes";
   import NsfwBlur from "./nsfw/NsfwBlur.svelte";
   import UniversalLightboxChrome from "./UniversalLightboxChrome.svelte";
-  import VideoPlayer, { type VideoPlayerHandle } from "./VideoPlayer.svelte";
+  import UniversalLightboxVideoStage from "./UniversalLightboxVideoStage.svelte";
+  import type { VideoPlayerHandle } from "./VideoPlayer.svelte";
   import {
     buildLightboxImageSources,
     buildLightboxPreloadSources,
@@ -111,22 +111,6 @@
   const currentMediaKey = $derived(current ? `${current.id}:${currentImageSource?.src ?? primaryVideoSource?.src ?? ""}` : null);
   const hasCurrentVideoPlayback = $derived(Boolean(isCurrentVideo && currentVideoSources.length > 0));
   const primaryVideoCodec = $derived(primaryVideoSource?.quality === "original" ? currentTechnical?.codec : null);
-  const currentVideoFit = $derived.by(() => {
-    const width =
-      positiveNumberValue(currentTechnical?.width) ??
-      positiveNumberValue(videoIntrinsicW) ??
-      positiveNumberValue(current?.initialAspectRatio?.width);
-    const height =
-      positiveNumberValue(currentTechnical?.height) ??
-      positiveNumberValue(videoIntrinsicH) ??
-      positiveNumberValue(current?.initialAspectRatio?.height);
-    if (!width || !height) return null;
-
-    return {
-      aspectRatio: `${width} / ${height}`,
-      widthToHeightRatio: width / height,
-    };
-  });
   const fallbackPoster = $derived(current?.coverUrl ?? undefined);
   const primaryImageLoaded = $derived(
     Boolean(!isCurrentVideo && currentImageSource && warmedImages[currentImageSource.src]),
@@ -460,33 +444,6 @@
     ready = true;
   }
 
-  function rememberVideoDimensions(video: HTMLVideoElement | null | undefined) {
-    videoIntrinsicW = video?.videoWidth || videoIntrinsicW;
-    videoIntrinsicH = video?.videoHeight || videoIntrinsicH;
-  }
-
-  function handleVideoCanPlay() {
-    rememberVideoDimensions(stageEl?.querySelector("video"));
-    videoReady = true;
-  }
-
-  async function handleNativeVideoCanPlay(event: Event) {
-    const video = event.currentTarget as HTMLVideoElement;
-    rememberVideoDimensions(video);
-    videoReady = true;
-    if (!video.paused) return;
-    try {
-      await video.play();
-    } catch {
-      // Muted autoplay is requested declaratively as well; native controls remain available
-      // if a browser policy still requires an explicit user gesture.
-    }
-  }
-
-  function handleNativeVolumeChange(event: Event) {
-    videoMuted = (event.currentTarget as HTMLVideoElement).muted;
-  }
-
   const gestureHandler = createLightboxGestureHandler({
     getState: () => ({
       scale,
@@ -671,63 +628,31 @@
             style:opacity={ready ? 1 : 0}
           >
             <NsfwBlur isNsfw={current.isNsfw === true} class="lightbox-media-guard">
-              {#if usesNativeAnimatedVideo && currentVideoSources.length > 0}
-                <div
-                  class="lightbox-video-shell"
-                  class:has-natural-ratio={Boolean(currentVideoFit)}
-                  class:is-ready={videoReady}
-                  style={`--lightbox-video-aspect-ratio: ${currentVideoFit?.aspectRatio ?? "16 / 9"}; --lightbox-video-width-ratio: ${currentVideoFit?.widthToHeightRatio ?? 1.7777777778};`}
-                >
-                  {#if fallbackPoster}
-                    <img class="lightbox-video-poster" src={fallbackPoster} alt="" aria-hidden="true" />
-                  {/if}
-                  {#key currentMediaKey}
-                    <video
-                      bind:this={nativeVideoEl}
-                      class="lightbox-native-video"
-                      controls
-                      autoplay
-                      loop
-                      playsinline
-                      muted={videoMuted}
-                      poster={fallbackPoster}
-                      onloadedmetadata={handleNativeVideoCanPlay}
-                      oncanplay={handleNativeVideoCanPlay}
-                      onvolumechange={handleNativeVolumeChange}
-                    >
-                      {#each currentVideoSources as source (`${source.quality}:${source.src}`)}
-                        <source src={source.src} type={source.type ?? undefined} />
-                      {/each}
-                    </video>
-                  {/key}
-                </div>
-              {:else if isCurrentVideo && primaryVideoSource}
-                <div
-                  class="lightbox-video-shell"
-                  class:has-natural-ratio={Boolean(currentVideoFit)}
-                  class:is-ready={videoReady}
-                  style={`--lightbox-video-aspect-ratio: ${currentVideoFit?.aspectRatio ?? "16 / 9"}; --lightbox-video-width-ratio: ${currentVideoFit?.widthToHeightRatio ?? 1.7777777778};`}
-                >
-                  {#if fallbackPoster}
-                    <img class="lightbox-video-poster" src={fallbackPoster} alt="" aria-hidden="true" />
-                  {/if}
-                  <VideoPlayer
-                    bind:handle={videoPlayerHandle}
-                    directSrc={primaryVideoSource.src}
-                    codec={primaryVideoCodec}
-                    sourceWidth={positiveNumberValue(currentTechnical?.width)}
-                    sourceHeight={positiveNumberValue(currentTechnical?.height)}
-                    poster={fallbackPoster}
-                    defaultPlaybackMode={PLAYBACK_MODE.direct}
-                    showCastControls={false}
-                    chrome="minimal"
-                    enableKeyboardShortcuts={false}
-                    initialMuted={videoMuted}
-                    onCanPlay={handleVideoCanPlay}
-                    autoPlay
-                    autoRepeat
-                  />
-                </div>
+              {#if (usesNativeAnimatedVideo && currentVideoSources.length > 0) || (isCurrentVideo && primaryVideoSource)}
+                <UniversalLightboxVideoStage
+                  {usesNativeAnimatedVideo}
+                  videoSources={currentVideoSources}
+                  {primaryVideoSource}
+                  mediaKey={currentMediaKey}
+                  technicalWidth={currentTechnical?.width}
+                  technicalHeight={currentTechnical?.height}
+                  initialAspectRatio={current.initialAspectRatio}
+                  {primaryVideoCodec}
+                  {fallbackPoster}
+                  {videoMuted}
+                  {videoReady}
+                  {videoIntrinsicW}
+                  {videoIntrinsicH}
+                  bind:nativeVideoEl
+                  bind:videoPlayerHandle
+                  {stageEl}
+                  onMutedChange={(muted) => (videoMuted = muted)}
+                  onReadyChange={(isReady) => (videoReady = isReady)}
+                  onDimensionsChange={(width, height) => {
+                    videoIntrinsicW = width;
+                    videoIntrinsicH = height;
+                  }}
+                />
               {:else if isCurrentVideo && fallbackPoster}
                 <img
                   bind:this={imageEl}
@@ -889,100 +814,6 @@
     justify-content: center;
     width: 100%;
     height: 100%;
-  }
-
-  .media-frame :global(.prismedia-player-surface) {
-    border: 0;
-    background: transparent;
-  }
-
-  .media-frame :global([data-testid="vidstack-video-player"]) {
-    aspect-ratio: inherit;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    height: auto;
-    max-width: 100%;
-    max-height: 100%;
-  }
-
-  .media-frame :global([data-testid="vidstack-video-player"] .prismedia-player-surface) {
-    width: 100%;
-    height: auto;
-    max-height: 100%;
-    aspect-ratio: inherit;
-  }
-
-  .media-frame :global(.prismedia-media-engine) {
-    width: 100%;
-    height: auto;
-    max-width: 100%;
-    max-height: 100%;
-    aspect-ratio: inherit;
-  }
-
-  .lightbox-video-shell {
-    --lightbox-video-aspect-ratio: 16 / 9;
-    --lightbox-video-max-height: calc((100dvh - 10rem) * 0.98);
-    --lightbox-video-width-ratio: 1.7777777778;
-    position: relative;
-    display: flex;
-    width: min(98dvw, 100%, calc(var(--lightbox-video-max-height) * var(--lightbox-video-width-ratio)));
-    max-width: min(98dvw, 100%);
-    height: auto;
-    max-height: min(98%, var(--lightbox-video-max-height));
-    aspect-ratio: var(--lightbox-video-aspect-ratio);
-    align-items: center;
-    justify-content: center;
-    background: #000;
-  }
-
-  .lightbox-video-shell.has-natural-ratio {
-    width: min(98dvw, 100%, calc(var(--lightbox-video-max-height) * var(--lightbox-video-width-ratio)));
-  }
-
-  .lightbox-video-poster {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    opacity: 1;
-    transition: opacity 160ms ease;
-    /* The poster stacks above the in-flow video; once faded out it must not swallow
-       the hover and clicks that reveal and drive the native controls. */
-    pointer-events: none;
-  }
-
-  .lightbox-video-shell :global([data-testid="vidstack-video-player"]) {
-    width: 100%;
-    max-width: 100%;
-    height: auto;
-    opacity: 0;
-    transition: opacity 160ms ease;
-  }
-
-  .lightbox-native-video {
-    width: 100%;
-    max-width: 100%;
-    height: 100%;
-    max-height: 100%;
-    object-fit: contain;
-    opacity: 0;
-    transition: opacity 160ms ease;
-  }
-
-  .lightbox-video-shell.is-ready .lightbox-native-video {
-    opacity: 1;
-  }
-
-  .lightbox-video-shell.is-ready :global([data-testid="vidstack-video-player"]) {
-    opacity: 1;
-  }
-
-  .lightbox-video-shell.is-ready .lightbox-video-poster {
-    opacity: 0;
   }
 
   .lightbox-image-shell {
