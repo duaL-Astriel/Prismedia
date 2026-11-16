@@ -27,10 +27,12 @@
     type EntityGridViewMode,
     type EntityGridBulkAction,
   } from "$lib/entities/entity-grid";
+  import { ENTITY_GRID_MOBILE_QUERY } from "$lib/entities/entity-grid-display";
   import type { EntityThumbnailCard } from "$lib/entities/entity-thumbnail";
   import { isCollectionEntityType, type CollectionEntityType } from "$lib/collections/models";
   import BulkSelectionBar from "./BulkSelectionBar.svelte";
   import EntityGridFilterDrawer from "./EntityGridFilterDrawer.svelte";
+  import EntityGridFilterSheet from "./EntityGridFilterSheet.svelte";
   import EntityGridContent from "./EntityGridContent.svelte";
   import EntityGridPagination from "./EntityGridPagination.svelte";
   import EntityGridTabs from "./EntityGridTabs.svelte";
@@ -52,7 +54,6 @@
   const DEFAULT_PAGE_SIZE = 100;
   const DEFAULT_PAGE_SIZE_OPTIONS = [100, 250, 500, 1000];
   const DEFAULT_DESKTOP_SCALE = 6;
-  const MOBILE_THUMBNAIL_QUERY = "(max-width: 639.98px)";
 
   interface Props {
     bulkActions?: EntityGridBulkAction[];
@@ -179,7 +180,7 @@
   function isMobileThumbnailViewport(): boolean {
     return browser &&
       typeof window.matchMedia === "function" &&
-      window.matchMedia(MOBILE_THUMBNAIL_QUERY).matches;
+      window.matchMedia(ENTITY_GRID_MOBILE_QUERY).matches;
   }
 
   function defaultScale(): number {
@@ -220,6 +221,7 @@
   let activeKind = $state(persistedPrefs?.activeKind ?? ENTITY_GRID_ALL_KINDS);
   let activePresetId = $state<string | null>(persistedPrefs?.activePresetId ?? null);
   let drawerOpen = $state(false);
+  let isMobile = $state(isMobileThumbnailViewport());
   let filterIds = $state<string[]>(persistedPrefs?.filterIds ?? []);
   let includeNsfw = $state(persistedPrefs?.includeNsfw ?? true);
   let presets = $state<FilterPreset[]>([]);
@@ -400,6 +402,17 @@
   });
 
   onMount(viewport.connect);
+
+  onMount(() => {
+    if (!browser || typeof window.matchMedia !== "function") return;
+    const mql = window.matchMedia(ENTITY_GRID_MOBILE_QUERY);
+    isMobile = mql.matches;
+    const onChange = (event: MediaQueryListEvent) => {
+      isMobile = event.matches;
+    };
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  });
 
   $effect(() => {
     onRequestChange?.(request);
@@ -697,6 +710,7 @@
     {activePresetId}
     {barsCollapsed}
     {canClearFilters}
+    {dockControls}
     {enableFeedView}
     {drawerOpen}
     {entityKind}
@@ -704,6 +718,7 @@
     {maxScale}
     {mediaWall}
     {minScale}
+    mobile={isMobile}
     onActiveFilterIdsChange={setFilterIds}
     onApplyPreset={applyPreset}
     onBarsCollapsedChange={(collapsed) => (barsCollapsed = collapsed)}
@@ -735,7 +750,24 @@
     </div>
   {/if}
 
-  {#if drawerOpen}
+  {#if isMobile}
+    <EntityGridFilterSheet
+      open={drawerOpen}
+      activeFilterIds={filterIds}
+      {filterOptions}
+      {entityKind}
+      {lockBookFilters}
+      hideNsfw={effectiveNsfwMode !== "show"}
+      {knownTags}
+      {canClearFilters}
+      totalCount={pagination.effectiveTotal}
+      totalIsExact={pagination.totalIsExact}
+      onOpenChange={(open) => (drawerOpen = open)}
+      onTagItemsKnown={recordKnownTagItems}
+      onActiveFilterIdsChange={setFilterIds}
+      onClearFilters={clearFilters}
+    />
+  {:else if drawerOpen}
     <EntityGridFilterDrawer
       activeFilterIds={filterIds}
       {filterOptions}
@@ -858,6 +890,14 @@
   }
 
   :global(.entity-grid > :first-child + *) {
+    margin-top: 0;
+  }
+
+  :global(.entity-grid > .mobile-active-filters) {
+    margin-top: 0.35rem;
+  }
+
+  :global(.entity-grid > .mobile-active-filters + *) {
     margin-top: 0;
   }
 

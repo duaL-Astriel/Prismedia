@@ -111,6 +111,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Changed
 
+- On mobile screens, library grid search, sort, view, preset, and filter controls collapse into a single compact rail that hides as you scroll down and reappears when you scroll up. Active filter chips scroll naturally with the results, and filters open in a bottom sheet showing live matching item counts instead of pushing the grid off-screen.
+
 - In the Comics tab, clicking a comic that only has a single release opens that comic directly instead of showing an intermediate series overview.
 
 - Selecting items in library grids no longer needs a Select button. Hover a card to tick its checkbox (touch screens always show it). Once anything is selected, every card shows its checkbox and a click selects instead of opening, and a floating bar at the bottom of the screen holds Select all, Clear, and the bulk actions. The bar stays put while scrolling, so actions remain reachable on long pages, and it disappears when the selection is cleared. The Identify page's queue button moves into the same bar.
