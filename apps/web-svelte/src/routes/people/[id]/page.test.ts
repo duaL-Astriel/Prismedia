@@ -126,18 +126,18 @@ describe("people/[id] detail page lightbox navigation", () => {
 
     await fireEvent.click(firstStill);
 
-    const dialog = await screen.findByRole("dialog");
-    expect(dialog).toHaveAttribute("aria-label", "First Still");
+    const dialog = await screen.findByRole("dialog", { name: "First Still" });
+    expect(dialog).toBeInTheDocument();
     expect(screen.getAllByText("1 / 3").length).toBeGreaterThan(0);
     expect(mocks.goto).not.toHaveBeenCalled();
 
     await fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(screen.getAllByText("2 / 3").length).toBeGreaterThan(0));
-    expect(screen.getByRole("dialog")).toHaveAttribute("aria-label", "Midway Clip");
+    expect(screen.getByRole("dialog", { name: "Midway Clip" })).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(screen.getAllByText("3 / 3").length).toBeGreaterThan(0));
-    expect(screen.getByRole("dialog")).toHaveAttribute("aria-label", "Second Still");
+    expect(screen.getByRole("dialog", { name: "Second Still" })).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());

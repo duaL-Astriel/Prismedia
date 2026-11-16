@@ -122,20 +122,20 @@ describe("tags/[id] detail page lightbox navigation", () => {
     const videoCard = await screen.findByRole("button", { name: "Neon Drive" });
     await fireEvent.click(videoCard);
 
-    const dialog = await screen.findByRole("dialog");
-    expect(dialog).toHaveAttribute("aria-label", "Neon Drive");
+    const dialog = await screen.findByRole("dialog", { name: "Neon Drive" });
+    expect(dialog).toBeInTheDocument();
     expect(screen.getAllByText("2 / 3").length).toBeGreaterThan(0);
     expect(mocks.goto).not.toHaveBeenCalled();
 
     await fireEvent.click(screen.getByRole("button", { name: "Previous" }));
     await waitFor(() => expect(screen.getAllByText("1 / 3").length).toBeGreaterThan(0));
-    expect(screen.getByRole("dialog")).toHaveAttribute("aria-label", "Alpha Grid");
+    expect(screen.getByRole("dialog", { name: "Alpha Grid" })).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(screen.getAllByText("2 / 3").length).toBeGreaterThan(0));
     await fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(screen.getAllByText("3 / 3").length).toBeGreaterThan(0));
-    expect(screen.getByRole("dialog")).toHaveAttribute("aria-label", "Zenith Skyline");
+    expect(screen.getByRole("dialog", { name: "Zenith Skyline" })).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
