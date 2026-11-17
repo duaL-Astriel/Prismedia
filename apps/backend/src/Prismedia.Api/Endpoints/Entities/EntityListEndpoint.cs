@@ -244,6 +244,12 @@ internal sealed record EntityListParameters {
     [FromQuery(Name = "acquisitionStatus")]
     public string? AcquisitionStatus { get; init; }
 
+    [FromQuery(Name = "creditRole")]
+    public string? CreditRole { get; init; }
+
+    [FromQuery(Name = "excludeCreditRole")]
+    public string? ExcludeCreditRole { get; init; }
+
     public EntityListQuery ToQuery(
         string? kind,
         bool? hideNsfw,
@@ -274,5 +280,7 @@ internal sealed record EntityListParameters {
         Orphaned = Orphaned,
         Wanted = Wanted,
         AcquisitionStatus = acquisitionStatus,
+        CreditRole = CreditRole,
+        ExcludeCreditRole = ExcludeCreditRole,
     };
 }

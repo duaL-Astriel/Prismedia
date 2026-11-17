@@ -37,6 +37,36 @@ internal abstract class EntityReadServiceStub : IEntityReadService {
         AcquisitionStatus? acquisitionStatus = null) =>
         Task.FromResult(new EntityListResponse([], null, 0));
 
+    public virtual Task<EntityListResponse> ListAsync(
+        EntityListQuery query,
+        CancellationToken cancellationToken) =>
+        ListAsync(
+            query.Kind,
+            query.Query,
+            query.Cursor,
+            query.HideNsfw,
+            query.Limit,
+            cancellationToken,
+            query.ReferencedBy,
+            query.RelationshipCode,
+            query.Sort,
+            query.SortDirection,
+            query.Seed,
+            query.Favorite,
+            query.Organized,
+            query.RatingMin,
+            query.RatingMax,
+            query.Unrated,
+            query.Status,
+            query.BookType,
+            query.BookFormat,
+            query.Nsfw,
+            query.HasFile,
+            query.Engaged,
+            query.Orphaned,
+            query.Wanted,
+            query.AcquisitionStatus);
+
     public virtual Task<EntityShelfResponse> ListShelfAsync(
         EntityListQuery query,
         CancellationToken cancellationToken) =>
