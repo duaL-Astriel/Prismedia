@@ -25,6 +25,7 @@
   } from "$lib/components/entities/entity-grid-lightbox";
   import { useIdentifyDetailAction } from "$lib/components/identify/use-identify-detail-action.svelte";
   import MetadataCard from "$lib/components/MetadataCard.svelte";
+  import { getBackHref } from "$lib/back-navigation";
   let relatedCards = $state<EntityThumbnailCard[]>([]);
   const gridLightbox = new GridLightboxController();
   let settingCoverEntityId = $state<string | null>(null);
@@ -43,6 +44,15 @@
       settingCoverEntityId = null;
     }
   }
+
+  const backHref = $derived(getBackHref(page.url.searchParams, "/people"));
+  const parentBreadcrumb = $derived(
+    backHref === "/browse/artists"
+      ? { label: "Artists", href: "/browse/artists" }
+      : backHref === "/browse/authors"
+        ? { label: "Authors", href: "/browse/authors" }
+        : { label: "People", href: "/people" },
+  );
 
   const detail = useEntityDetailPage<EntityCardFull>({
     loadKey: () => page.params.id ?? "",
@@ -66,7 +76,7 @@
       return nextPerson;
     },
     breadcrumbs: (person) => [
-      { label: "People", href: "/people" },
+      parentBreadcrumb,
       { label: person.title },
     ],
   });

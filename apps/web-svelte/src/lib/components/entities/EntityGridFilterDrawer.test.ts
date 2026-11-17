@@ -50,6 +50,30 @@ describe("EntityGridFilterDrawer availability", () => {
     expect(screen.queryByText("Status")).not.toBeInTheDocument();
   });
 
+  it("shows person credit-role filters on People and hides them when locked", async () => {
+    const onChange = vi.fn();
+    const { rerender } = render(EntityGridFilterDrawer, {
+      activeFilterIds: [],
+      filterOptions: [],
+      entityKind: ENTITY_KIND.person,
+      onActiveFilterIdsChange: onChange,
+    });
+
+    expect(screen.getByText("Roles")).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: "Include artists & authors" }));
+    expect(onChange).toHaveBeenCalledWith(["person-role:include-all"]);
+
+    await rerender({
+      activeFilterIds: [],
+      filterOptions: [],
+      entityKind: ENTITY_KIND.person,
+      lockPersonRoleFilters: true,
+      onActiveFilterIdsChange: onChange,
+    });
+
+    expect(screen.queryByText("Roles")).not.toBeInTheDocument();
+  });
+
   it("renders tag autocomplete only for media and mixed grids, not taxonomy or collection grids", async () => {
     const { rerender } = render(EntityGridFilterDrawer, {
       activeFilterIds: [],

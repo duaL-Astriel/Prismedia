@@ -55,6 +55,11 @@
     kind: string;
     lightboxTitle?: string;
     /**
+     * Default server filter parameters applied before the grid's own filter controls,
+     * allowing user filters (such as "Include artists & authors" on People) to override them.
+     */
+    defaultServerQuery?: Partial<EntityGridServerQuery>;
+    /**
      * Server filter parameters that always apply, regardless of the grid's filter
      * controls. Used by constrained sub-views such as Comics/eBooks to lock the
      * book type/format. Spread after the user's filters so the lock always wins.
@@ -62,6 +67,8 @@
     lockedServerQuery?: Partial<EntityGridServerQuery>;
     /** Hide the book type/format filter chips (for routes that already lock those filters). */
     lockBookFilters?: boolean;
+    /** Hide the person credit-role filter chips (for routes that lock a role view). */
+    lockPersonRoleFilters?: boolean;
     prefsKey: string;
     resolveHref?: (item: EntityCard) => string | undefined;
     title: string;
@@ -87,8 +94,10 @@
     icon: Icon,
     initialMediaWall = false,
     kind,
+    defaultServerQuery,
     lockedServerQuery,
     lockBookFilters = false,
+    lockPersonRoleFilters = false,
     prefsKey,
     resolveHref,
     title,
@@ -165,7 +174,8 @@
     getKind: () => kind,
     getHideNsfw: () => nsfw.mode === "off",
     resolveHref: (item) => resolveHref?.(item),
-    // Static per-route literal; capture once at construction.
+    // Static per-route literals; capture once at construction.
+    defaultServerQuery: untrack(() => defaultServerQuery),
     lockedServerQuery: untrack(() => lockedServerQuery),
   });
 
@@ -364,6 +374,7 @@
       entityKind={kind}
       {prefsKey}
       {lockBookFilters}
+      {lockPersonRoleFilters}
       {enableFeedView}
       {emptyTitle}
       {emptyMessage}

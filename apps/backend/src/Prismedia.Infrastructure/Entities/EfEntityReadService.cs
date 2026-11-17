@@ -74,7 +74,7 @@ public sealed partial class EfEntityReadService : IEntityReadService {
 
     private Guid CurrentUserId => _currentUser.UserId;
 
-    public async Task<EntityListResponse> ListAsync(
+    public Task<EntityListResponse> ListAsync(
         string? kind,
         string? query,
         string? cursor,
@@ -100,8 +100,8 @@ public sealed partial class EfEntityReadService : IEntityReadService {
         bool? orphaned = null,
         bool? wanted = null,
         AcquisitionStatus? acquisitionStatus = null,
-        IReadOnlyList<Guid>? tagIds = null) {
-        var page = await ListPageAsync(
+        IReadOnlyList<Guid>? tagIds = null) =>
+        ListAsync(
             new EntityListQuery {
                 Kind = kind,
                 Query = query,
@@ -129,6 +129,14 @@ public sealed partial class EfEntityReadService : IEntityReadService {
                 AcquisitionStatus = acquisitionStatus,
                 TagIds = tagIds,
             },
+            cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<EntityListResponse> ListAsync(
+        EntityListQuery query,
+        CancellationToken cancellationToken) {
+        var page = await ListPageAsync(
+            query,
             includeTotalCount: true,
             ThumbnailProjectionMode.Full,
             cancellationToken);
@@ -254,6 +262,7 @@ public sealed partial class EfEntityReadService : IEntityReadService {
             orphaned,
             wanted,
             tagIds);
+        entityQuery = ApplyCreditRoleFilters(entityQuery, request.CreditRole, request.ExcludeCreditRole);
         entityQuery = await _acquisitionStatuses.ApplyFilterAsync(entityQuery, acquisitionStatus, cancellationToken);
         entityQuery = await _sourceOwnershipFilter.ApplyFilterAsync(entityQuery, hasFile, cancellationToken);
 

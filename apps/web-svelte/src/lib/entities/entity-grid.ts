@@ -41,6 +41,11 @@ import {
 } from "./entity-thumbnail";
 import { bookFilterDefinitionFromId } from "./entity-grid-book-filters";
 import {
+  applyPersonRoleFiltersToServerQuery,
+  personRoleFilterDefinitionFromId,
+  personRoleFilterOptionFromId,
+} from "./entity-grid-person-filters";
+import {
   cardMatchesTagFilter,
   isTagFilterId,
   tagFilterOption,
@@ -53,6 +58,13 @@ import {
 } from "./entity-shared-source-episodes";
 
 export { BOOK_FORMAT_FILTER_DEFS, BOOK_TYPE_FILTER_DEFS } from "./entity-grid-book-filters";
+export {
+  ARTIST_CREDIT_ROLES,
+  AUTHOR_CREDIT_ROLES,
+  EXCLUDED_PEOPLE_CREDIT_ROLES,
+  PERSON_INCLUDE_ALL_ROLES_FILTER_DEF,
+  PERSON_ROLE_FILTER_DEFS,
+} from "./entity-grid-person-filters";
 export {
   isTagFilterId,
   tagFilterId,
@@ -83,6 +95,8 @@ export type EntityGridServerQuery = Pick<
   | "status"
   | "bookType"
   | "bookFormat"
+  | "creditRole"
+  | "excludeCreditRole"
   | "nsfw"
   | "hasFile"
   | "wanted"
@@ -613,7 +627,8 @@ export function isServerResolvedFilterId(id: string): boolean {
     id.startsWith("rating:max:") ||
     id.startsWith("status:") ||
     isTagFilterId(id) ||
-    bookFilterDefinitionFromId(id) !== undefined
+    bookFilterDefinitionFromId(id) !== undefined ||
+    personRoleFilterDefinitionFromId(id) !== undefined
   );
 }
 
@@ -681,6 +696,7 @@ export function buildServerQueryFromFilters(filterIds: string[]): EntityGridServ
   // the server ANDs the two families together.
   if (bookTypes.length > 0) server.bookType = bookTypes.join(",");
   if (bookFormats.length > 0) server.bookFormat = bookFormats.join(",");
+  applyPersonRoleFiltersToServerQuery(filterIds, server);
   if (tagIds.length > 0) server.tagIds = tagIds.join(",");
   return server;
 }
@@ -975,6 +991,10 @@ export function entityGridFilterFromId(
   const bookFilter = bookFilterDefinitionFromId(id);
   if (bookFilter) {
     return { id, count: 0, label: bookFilter.label, capabilityKind: CAPABILITY_KIND.classification, value: bookFilter.code };
+  }
+  const personRoleOption = personRoleFilterOptionFromId(id);
+  if (personRoleOption) {
+    return personRoleOption;
   }
   const tagId = tagIdFromFilterId(id);
   if (tagId) {

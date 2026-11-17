@@ -101,6 +101,12 @@ export interface EntityIndexPageStateOptions {
   getHideNsfw: () => boolean;
   resolveHref?: (item: EntityCard) => string | undefined;
   /**
+   * Default server query parameters applied before the grid's own filter state,
+   * so user filter controls (e.g. "Include artists & authors" on People) can
+   * override them.
+   */
+  defaultServerQuery?: Partial<EntityGridServerQuery>;
+  /**
    * Server query parameters that always apply to this index, regardless of the
    * grid's filter controls. Used by constrained sub-views (e.g. Comics/eBooks
    * lock book type/format). Spread after the user's {@link serverQuery} so the lock
@@ -155,20 +161,31 @@ export class EntityIndexPageState {
     await this.loadInitial();
   }
 
+  #buildParams(cursor?: string): ListEntitiesParams {
+    const mergedServerQuery: EntityGridServerQuery = {
+      ...this.#options.defaultServerQuery,
+      ...this.serverQuery,
+      ...this.#options.lockedServerQuery,
+    };
+    return {
+      kind: this.#options.getKind(),
+      query: this.query || undefined,
+      cursor,
+      hideNsfw: this.#options.getHideNsfw(),
+      limit: this.pageSize,
+      ...mergedServerQuery,
+      creditRole: mergedServerQuery.creditRole || undefined,
+      excludeCreditRole: mergedServerQuery.excludeCreditRole || undefined,
+    };
+  }
+
   async loadInitial() {
     this.#loadStarted = true;
     this.#searchAbort?.abort();
     this.#searchAbort = new AbortController();
     const signal = this.#searchAbort.signal;
 
-    const params: ListEntitiesParams = {
-      kind: this.#options.getKind(),
-      query: this.query || undefined,
-      hideNsfw: this.#options.getHideNsfw(),
-      limit: this.pageSize,
-      ...this.serverQuery,
-      ...this.#options.lockedServerQuery,
-    };
+    const params = this.#buildParams();
     const cacheKey = initialPageCacheKey(params);
     const cached = readCachedInitialPage(cacheKey);
     if (cached) {
@@ -211,15 +228,7 @@ export class EntityIndexPageState {
     this.loadMoreError = null;
 
     try {
-      const response = await fetchEntities({
-        kind: this.#options.getKind(),
-        query: this.query || undefined,
-        cursor: this.nextCursor,
-        hideNsfw: this.#options.getHideNsfw(),
-        limit: this.pageSize,
-        ...this.serverQuery,
-        ...this.#options.lockedServerQuery,
-      });
+      const response = await fetchEntities(this.#buildParams(this.nextCursor));
       this.items = [...this.items, ...response.items];
       this.nextCursor = response.nextCursor;
       this.totalCount = requireTotalCount(response.totalCount);

@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- Separated credited artists and authors into dedicated views in the Browse sidebar (`Artists` and `Authors`) filtered by credit role, and updated `People` to exclude credited artists and authors by default with role filters (including an option to include artists and authors).
+
 - Images, lightbox videos, and paged comics now support interactive drag-follow wipe gestures: dragging horizontally tracks the finger 1:1 with adjacent item or page previews, rubber-banding at boundaries, and smooth wipe-in transitions (respecting right-to-left manga order and reduced-motion preferences), while dragging downward scales and dims the stage to dismiss.
 
 - The comic reader supports Fit to screen, Fit to width, and Fit to height display modes across both paged and webtoon layouts, defaulting to Fit to width on narrow mobile viewports and Fit to screen on desktop while remembering the selected preference per device.

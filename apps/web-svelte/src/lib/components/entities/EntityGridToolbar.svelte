@@ -38,6 +38,8 @@
     knownTags?: ReadonlyMap<string, EntityPickerItem>;
     /** Hide the book type/format chips (constrained views that already lock those filters). */
     lockBookFilters?: boolean;
+    /** Hide the person credit-role chips (constrained views that already lock a role scope). */
+    lockPersonRoleFilters?: boolean;
     maxScale: number;
     minScale: number;
     /** Explicit mobile layout override; defaults to matching `(max-width: 639.98px)`. */
@@ -82,6 +84,7 @@
     hideNsfw = false,
     knownTags,
     lockBookFilters = false,
+    lockPersonRoleFilters = false,
     maxScale,
     minScale,
     mobile: mobileOverride,
@@ -266,6 +269,7 @@
             {filterOptions}
             {entityKind}
             {lockBookFilters}
+            {lockPersonRoleFilters}
             {hideNsfw}
             {knownTags}
             {onTagItemsKnown}

@@ -95,6 +95,19 @@ public sealed record EntityListQuery {
     /// <summary>Filters to wanted placeholders (true), or excludes them (false). Null includes both.</summary>
     public bool? Wanted { get; init; }
 
+    /// <summary>
+    /// Comma-separated <see cref="CreditRole"/> codes. When set, keeps entities that hold
+    /// at least one inbound cast/credit link with any listed role.
+    /// </summary>
+    public string? CreditRole { get; init; }
+
+    /// <summary>
+    /// Comma-separated <see cref="CreditRole"/> codes. When set, excludes entities whose
+    /// inbound cast/credit links all belong to the listed roles (entities with no credits or
+    /// at least one non-excluded role remain visible).
+    /// </summary>
+    public string? ExcludeCreditRole { get; init; }
+
     /// <summary>Optional tag entity IDs that every returned entity must link to (all tags must match).</summary>
     public IReadOnlyList<Guid>? TagIds { get; init; }
 }

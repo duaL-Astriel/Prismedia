@@ -11,6 +11,7 @@
     filterOptions: EntityGridFilterOption[];
     entityKind?: string;
     lockBookFilters?: boolean;
+    lockPersonRoleFilters?: boolean;
     hideNsfw?: boolean;
     knownTags?: ReadonlyMap<string, EntityPickerItem>;
     canClearFilters: boolean;
@@ -28,6 +29,7 @@
     filterOptions,
     entityKind,
     lockBookFilters = false,
+    lockPersonRoleFilters = false,
     hideNsfw = false,
     knownTags,
     canClearFilters,
@@ -82,6 +84,7 @@
         {filterOptions}
         {entityKind}
         {lockBookFilters}
+        {lockPersonRoleFilters}
         {hideNsfw}
         {knownTags}
         {onTagItemsKnown}

@@ -88,6 +88,11 @@
      * would be redundant and confusing.
      */
     lockBookFilters?: boolean;
+    /**
+     * Hide the person credit-role filter chips. Used by constrained person sub-views
+     * (Browse -> Artists/Authors) that already lock a role scope.
+     */
+    lockPersonRoleFilters?: boolean;
     hasMore?: boolean;
     initialPageSize?: number;
     initialMediaWall?: boolean;
@@ -144,6 +149,7 @@
     emptyTitle = "Nothing present",
     entityKind,
     lockBookFilters = false,
+    lockPersonRoleFilters = false,
     hasMore = false,
     initialPageSize = DEFAULT_PAGE_SIZE,
     initialMediaWall = false,
@@ -717,6 +723,7 @@
     hideNsfw={effectiveNsfwMode !== "show"}
     {knownTags}
     {lockBookFilters}
+    {lockPersonRoleFilters}
     {maxScale}
     {mediaWall}
     {minScale}
@@ -760,6 +767,7 @@
       {filterOptions}
       {entityKind}
       {lockBookFilters}
+      {lockPersonRoleFilters}
       hideNsfw={effectiveNsfwMode !== "show"}
       {knownTags}
       {canClearFilters}

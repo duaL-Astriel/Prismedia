@@ -3538,6 +3538,103 @@ public sealed class EfEntityReadServiceTests {
     }
 
     [Fact]
+    public async Task ListAsyncSeparatesArtistsAuthorsAndPeopleByCreditRole() {
+        await using var db = CreateContext();
+        var now = DateTimeOffset.UtcNow;
+        var personKind = EntityKind.Person.ToCode();
+        var castCode = RelationshipKind.Cast.ToCode();
+        var creditsCode = RelationshipKind.Credits.ToCode();
+
+        var movieId = Guid.NewGuid();
+        var comicId = Guid.NewGuid();
+        var bookId = Guid.NewGuid();
+        var albumId = Guid.NewGuid();
+
+        var actorId = Guid.NewGuid();
+        var artistId = Guid.NewGuid();
+        var writerId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var multiRoleId = Guid.NewGuid();
+        var uncreditedId = Guid.NewGuid();
+
+        db.Entities.AddRange(
+            new EntityRow { Id = movieId, KindCode = EntityKind.Movie.ToCode(), Title = "Movie", CreatedAt = now, UpdatedAt = now },
+            new EntityRow { Id = comicId, KindCode = EntityKind.ComicSeries.ToCode(), Title = "Comic", CreatedAt = now, UpdatedAt = now },
+            new EntityRow { Id = bookId, KindCode = EntityKind.Book.ToCode(), Title = "Book", CreatedAt = now, UpdatedAt = now },
+            new EntityRow { Id = albumId, KindCode = EntityKind.AudioLibrary.ToCode(), Title = "Album", CreatedAt = now, UpdatedAt = now },
+            new EntityRow { Id = actorId, KindCode = personKind, Title = "Actor Only", CreatedAt = now, UpdatedAt = now },
+            new EntityRow { Id = artistId, KindCode = personKind, Title = "Artist Only", CreatedAt = now, UpdatedAt = now },
+            new EntityRow { Id = writerId, KindCode = personKind, Title = "Writer Only", CreatedAt = now, UpdatedAt = now },
+            new EntityRow { Id = creatorId, KindCode = personKind, Title = "Comic Creator", CreatedAt = now, UpdatedAt = now },
+            new EntityRow { Id = multiRoleId, KindCode = personKind, Title = "Actor And Author", CreatedAt = now, UpdatedAt = now },
+            new EntityRow { Id = uncreditedId, KindCode = personKind, Title = "Uncredited Person", CreatedAt = now, UpdatedAt = now });
+
+        db.EntityRelationshipLinks.AddRange(
+            new EntityRelationshipLinkRow {
+                EntityId = movieId, RelationshipCode = castCode, Label = "Cast",
+                TargetEntityId = actorId, TargetKindCode = personKind, SortOrder = 0,
+                MetadataJson = """{"role":"actor","character":"Hero","roles":["actor"]}""", CreatedAt = now
+            },
+            new EntityRelationshipLinkRow {
+                EntityId = albumId, RelationshipCode = creditsCode, Label = "Credits",
+                TargetEntityId = artistId, TargetKindCode = personKind, SortOrder = 0,
+                MetadataJson = """{"role":"artist","roles":["artist"]}""", CreatedAt = now
+            },
+            new EntityRelationshipLinkRow {
+                EntityId = bookId, RelationshipCode = castCode, Label = "Cast",
+                TargetEntityId = writerId, TargetKindCode = personKind, SortOrder = 0,
+                MetadataJson = """{"role":"writer","roles":["writer"]}""", CreatedAt = now
+            },
+            new EntityRelationshipLinkRow {
+                EntityId = comicId, RelationshipCode = castCode, Label = "Cast",
+                TargetEntityId = creatorId, TargetKindCode = personKind, SortOrder = 0,
+                MetadataJson = """{"role":"creator","roles":["creator"]}""", CreatedAt = now
+            },
+            new EntityRelationshipLinkRow {
+                EntityId = movieId, RelationshipCode = castCode, Label = "Cast",
+                TargetEntityId = multiRoleId, TargetKindCode = personKind, SortOrder = 1,
+                MetadataJson = """{"role":"actor","roles":["actor"]}""", CreatedAt = now
+            },
+            new EntityRelationshipLinkRow {
+                EntityId = bookId, RelationshipCode = castCode, Label = "Cast",
+                TargetEntityId = multiRoleId, TargetKindCode = personKind, SortOrder = 1,
+                MetadataJson = """{"role":"writer","roles":["writer"]}""", CreatedAt = now
+            });
+        await db.SaveChangesAsync();
+
+        IEntityReadService service = CreateService(db);
+
+        var artists = await service.ListAsync(new EntityListQuery {
+            Kind = personKind,
+            CreditRole = $"{CreditRole.Artist.ToCode()},{CreditRole.Creator.ToCode()},{CreditRole.Composer.ToCode()}"
+        }, CancellationToken.None);
+        Assert.Equal(
+            new[] { artistId, creatorId }.Order().ToArray(),
+            artists.Items.Select(item => item.Id).Order().ToArray());
+
+        var authors = await service.ListAsync(new EntityListQuery {
+            Kind = personKind,
+            CreditRole = $"{CreditRole.Writer.ToCode()},{CreditRole.Creator.ToCode()},{CreditRole.Narrator.ToCode()}"
+        }, CancellationToken.None);
+        Assert.Equal(
+            new[] { multiRoleId, creatorId, writerId }.Order().ToArray(),
+            authors.Items.Select(item => item.Id).Order().ToArray());
+
+        var people = await service.ListAsync(new EntityListQuery {
+            Kind = personKind,
+            ExcludeCreditRole = string.Join(',',
+                CreditRole.Artist.ToCode(),
+                CreditRole.Writer.ToCode(),
+                CreditRole.Creator.ToCode(),
+                CreditRole.Narrator.ToCode(),
+                CreditRole.Composer.ToCode())
+        }, CancellationToken.None);
+        Assert.Equal(
+            new[] { actorId, multiRoleId, uncreditedId }.Order().ToArray(),
+            people.Items.Select(item => item.Id).Order().ToArray());
+    }
+
+    [Fact]
     public async Task ListAsyncFiltersByAllSpecifiedTagsAcrossMediaKinds() {
         await using var db = CreateContext();
         var now = DateTimeOffset.UtcNow;

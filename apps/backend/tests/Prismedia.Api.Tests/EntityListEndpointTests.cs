@@ -130,6 +130,21 @@ public sealed class EntityListEndpointTests {
     }
 
     [Fact]
+    public async Task CreditRoleFiltersReachEntityReadService() {
+        var entityReadService = new CapturingEntityReadService();
+        using var factory = CreateFactory(entityReadService);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.GetAsync(
+            "/api/entities?kind=person&creditRole=artist%2Ccreator&excludeCreditRole=actor");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("person", entityReadService.LastQuery?.Kind);
+        Assert.Equal("artist,creator", entityReadService.LastQuery?.CreditRole);
+        Assert.Equal("actor", entityReadService.LastQuery?.ExcludeCreditRole);
+    }
+
+    [Fact]
     public async Task TagIdsQueryAcceptsMultipleGuidsAndForwardsToEntityReadService() {
         var entityReadService = new CapturingEntityReadService();
         using var factory = CreateFactory(entityReadService);
@@ -202,6 +217,40 @@ public sealed class EntityListEndpointTests {
         public IReadOnlyList<Guid>? TagIds { get; private set; }
         public int ShelfCallCount { get; private set; }
         public EntityListQuery? ShelfQuery { get; private set; }
+        public EntityListQuery? LastQuery { get; private set; }
+
+        public override Task<EntityListResponse> ListAsync(
+            EntityListQuery query,
+            CancellationToken cancellationToken) {
+            LastQuery = query;
+            return ListAsync(
+                query.Kind,
+                query.Query,
+                query.Cursor,
+                query.HideNsfw,
+                query.Limit,
+                cancellationToken,
+                query.ReferencedBy,
+                query.RelationshipCode,
+                query.Sort,
+                query.SortDirection,
+                query.Seed,
+                query.Favorite,
+                query.Organized,
+                query.RatingMin,
+                query.RatingMax,
+                query.Unrated,
+                query.Status,
+                query.BookType,
+                query.BookFormat,
+                query.Nsfw,
+                query.HasFile,
+                query.Engaged,
+                query.Orphaned,
+                query.Wanted,
+                query.AcquisitionStatus,
+                query.TagIds);
+        }
 
         public override Task<EntityListResponse> ListAsync(
             string? kind,

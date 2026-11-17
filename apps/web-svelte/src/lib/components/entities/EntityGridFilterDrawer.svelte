@@ -19,6 +19,8 @@
     AVAILABILITY_FILTER_DEFS,
     BOOK_FORMAT_FILTER_DEFS,
     BOOK_TYPE_FILTER_DEFS,
+    PERSON_INCLUDE_ALL_ROLES_FILTER_DEF,
+    PERSON_ROLE_FILTER_DEFS,
     isTagFilterId,
     tagFilterId,
     tagIdFromFilterId,
@@ -31,6 +33,8 @@
     entityKind?: string;
     /** Hide the book type/format chips (constrained views that already lock those filters). */
     lockBookFilters?: boolean;
+    /** Hide the person credit-role chips (constrained views that already lock a role scope). */
+    lockPersonRoleFilters?: boolean;
     /** Whether tag autocomplete searches should suppress NSFW tags. */
     hideNsfw?: boolean;
     /** Resolved tag items keyed by tag ID, supplied by the parent EntityGrid. */
@@ -45,6 +49,7 @@
     filterOptions,
     entityKind,
     lockBookFilters = false,
+    lockPersonRoleFilters = false,
     hideNsfw = false,
     knownTags,
     onTagItemsKnown,
@@ -101,6 +106,8 @@
   // Book type/format are properties of the book detail row, so they only make sense on the
   // Books grid; the server resolves them across the whole library.
   const showBookFilters = $derived(entityKind === ENTITY_KIND.book && !lockBookFilters);
+  const showPersonRoleFilters = $derived(entityKind === ENTITY_KIND.person && !lockPersonRoleFilters);
+  const PERSON_SPECIFIC_ROLE_IDS = PERSON_ROLE_FILTER_DEFS.map((definition) => definition.id);
 
   // Taxonomy kinds (tags/people/studios) can be filtered by whether anything references them,
   // resolved server-side across the whole library. The two chips are mutually exclusive — neither
@@ -171,6 +178,22 @@
   function toggleExclusive(id: string, group: string[]) {
     const without = activeFilterIds.filter((filterId) => !group.includes(filterId));
     onActiveFilterIdsChange(isActive(id) ? without : [...without, id]);
+  }
+
+  function togglePersonRole(id: string) {
+    if (id === PERSON_INCLUDE_ALL_ROLES_FILTER_DEF.id) {
+      toggleExclusive(id, [id, ...PERSON_SPECIFIC_ROLE_IDS]);
+      return;
+    }
+
+    const withoutIncludeAll = activeFilterIds.filter(
+      (filterId) => filterId !== PERSON_INCLUDE_ALL_ROLES_FILTER_DEF.id,
+    );
+    onActiveFilterIdsChange(
+      isActive(id)
+        ? withoutIncludeAll.filter((filterId) => filterId !== id)
+        : [...withoutIncludeAll, id],
+    );
   }
 
 
@@ -358,6 +381,26 @@
               {item.label}
             </ToggleButton>
           {/each}
+        </div>
+      </section>
+    {/if}
+
+    {#if showPersonRoleFilters}
+      <section>
+        <div class="mb-2 text-kicker">Roles</div>
+        <div class="flex flex-wrap gap-1">
+          {#each PERSON_ROLE_FILTER_DEFS as role (role.id)}
+            <ToggleButton variant="outline" size="sm" bind:pressed={() => isActive(role.id), () => togglePersonRole(role.id)}>
+              {role.label}
+            </ToggleButton>
+          {/each}
+          <ToggleButton
+            variant="outline"
+            size="sm"
+            bind:pressed={() => isActive(PERSON_INCLUDE_ALL_ROLES_FILTER_DEF.id), () => togglePersonRole(PERSON_INCLUDE_ALL_ROLES_FILTER_DEF.id)}
+          >
+            {PERSON_INCLUDE_ALL_ROLES_FILTER_DEF.label}
+          </ToggleButton>
         </div>
       </section>
     {/if}
