@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACQUISITION_STATUS, ALIGNMENT_GAP_REASON, BOOK_FORMAT, BOOK_TYPE, CAPABILITY_KIND } from "$lib/api/generated/codes";
+import { ACQUISITION_STATUS, ALIGNMENT_GAP_REASON, BOOK_FORMAT, BOOK_TYPE, CAPABILITY_KIND, CREDIT_ROLE } from "$lib/api/generated/codes";
 import type { EntityCapability, EntityCard, EntityThumbnail, EntityKind } from "$lib/api/generated/model";
 import { ENTITY_KIND } from "$lib/entities/entity-codes";
 import {
@@ -7,11 +7,14 @@ import {
   BOOK_FORMAT_FILTER_DEFS,
   BOOK_TYPE_FILTER_DEFS,
   ENTITY_GRID_ALL_KINDS,
+  PERSON_INCLUDE_ALL_ROLES_FILTER_DEF,
+  PERSON_ROLE_FILTER_DEFS,
   applyEntityGridState,
   buildCapabilityFilterOptions,
   buildEntityKindTabs,
   buildServerQueryFromFilters,
   entityCardToThumbnailCard,
+  entityGridFilterFromId,
   entityGridRequestFromState,
   isServerResolvedFilterId,
   normalizeEntityGridFilterIds,
@@ -589,6 +592,26 @@ describe("server-resolved filters and sorting", () => {
     expect(isServerResolvedFilterId(
       BOOK_FORMAT_FILTER_DEFS.find((definition) => definition.code === BOOK_FORMAT.epub)!.id,
     )).toBe(true);
+  });
+
+  it("folds person credit-role filters into server params and resolves active chip labels", () => {
+    const actorFilter = PERSON_ROLE_FILTER_DEFS.find((definition) => definition.code === CREDIT_ROLE.actor)!;
+    const directorFilter = PERSON_ROLE_FILTER_DEFS.find((definition) => definition.code === CREDIT_ROLE.director)!;
+
+    expect(isServerResolvedFilterId(actorFilter.id)).toBe(true);
+    expect(isServerResolvedFilterId(PERSON_INCLUDE_ALL_ROLES_FILTER_DEF.id)).toBe(true);
+
+    expect(buildServerQueryFromFilters([actorFilter.id, directorFilter.id])).toEqual({
+      creditRole: [CREDIT_ROLE.actor, CREDIT_ROLE.director].join(","),
+      excludeCreditRole: "",
+    });
+    expect(buildServerQueryFromFilters([PERSON_INCLUDE_ALL_ROLES_FILTER_DEF.id])).toEqual({
+      excludeCreditRole: "",
+    });
+
+    expect(entityGridFilterFromId(PERSON_INCLUDE_ALL_ROLES_FILTER_DEF.id, [])?.label).toBe(
+      "Include artists & authors",
+    );
   });
 
   it("does not re-filter the loaded page on book type/format filters", () => {

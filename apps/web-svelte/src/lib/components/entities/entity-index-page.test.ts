@@ -200,6 +200,41 @@ describe("EntityIndexPageState", () => {
     expect(fetchEntities).toHaveBeenCalledTimes(2);
     expect(refreshedVisit.cards[0]?.entity.title).toBe("After");
   });
+
+  it("applies defaultServerQuery until overridden by filter state and clears empty role params", async () => {
+    fetchEntities.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      totalCount: 0,
+    });
+
+    const state = new EntityIndexPageState({
+      getKind: () => "person",
+      getHideNsfw: () => false,
+      defaultServerQuery: { excludeCreditRole: "artist,writer,creator,narrator,composer" },
+    });
+
+    await state.loadInitial();
+    expect(fetchEntities).toHaveBeenLastCalledWith({
+      kind: "person",
+      query: undefined,
+      hideNsfw: false,
+      limit: 100,
+      excludeCreditRole: "artist,writer,creator,narrator,composer",
+    });
+
+    state.setServerQuery({ excludeCreditRole: "" });
+    await vi.waitFor(() => {
+      expect(fetchEntities).toHaveBeenCalledTimes(2);
+    });
+    expect(fetchEntities).toHaveBeenLastCalledWith({
+      kind: "person",
+      query: undefined,
+      hideNsfw: false,
+      limit: 100,
+      excludeCreditRole: undefined,
+    });
+  });
 });
 
 function entity(id: string, kind: EntityKind, title: string, overrides: Partial<EntityCard> = {}): EntityCard {

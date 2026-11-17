@@ -33,6 +33,16 @@ describe("defaultNavPrefs", () => {
     const audio = prefs.sections.find((s) => s.id === "audio");
     expect(audio?.items).toEqual(["/audio", "/artists", "/tracks"]);
 
+    const browse = prefs.sections.find((s) => s.id === "browse");
+    expect(browse?.items).toEqual([
+      "/people",
+      "/browse/artists",
+      "/browse/authors",
+      "/studios",
+      "/tags",
+      "/collections",
+    ]);
+
     const operate = prefs.sections.find((s) => s.id === "operate");
     expect(operate?.items).toContain("/downloads");
 

@@ -39,6 +39,10 @@ import {
   type EntityThumbnailMetaIcon,
 } from "./entity-thumbnail";
 import { bookFilterDefinitionFromId } from "./entity-grid-book-filters";
+import {
+  PERSON_INCLUDE_ALL_ROLES_FILTER_DEF,
+  personRoleFilterDefinitionFromId,
+} from "./entity-grid-person-filters";
 import type { EntityGridSort, EntityGridViewMode } from "./entity-grid-display";
 import {
   sharedSourceEpisodeDisplayTitle,
@@ -46,6 +50,13 @@ import {
 } from "./entity-shared-source-episodes";
 
 export { BOOK_FORMAT_FILTER_DEFS, BOOK_TYPE_FILTER_DEFS } from "./entity-grid-book-filters";
+export {
+  ARTIST_CREDIT_ROLES,
+  AUTHOR_CREDIT_ROLES,
+  EXCLUDED_PEOPLE_CREDIT_ROLES,
+  PERSON_INCLUDE_ALL_ROLES_FILTER_DEF,
+  PERSON_ROLE_FILTER_DEFS,
+} from "./entity-grid-person-filters";
 
 /**
  * Sentinel kind used when an entity grid is showing every returned entity kind
@@ -69,6 +80,8 @@ export type EntityGridServerQuery = Pick<
   | "status"
   | "bookType"
   | "bookFormat"
+  | "creditRole"
+  | "excludeCreditRole"
   | "nsfw"
   | "hasFile"
   | "wanted"
@@ -594,7 +607,8 @@ export function isServerResolvedFilterId(id: string): boolean {
     id.startsWith("rating:min:") ||
     id.startsWith("rating:max:") ||
     id.startsWith("status:") ||
-    bookFilterDefinitionFromId(id) !== undefined
+    bookFilterDefinitionFromId(id) !== undefined ||
+    personRoleFilterDefinitionFromId(id) !== undefined
   );
 }
 
@@ -607,6 +621,8 @@ export function buildServerQueryFromFilters(filterIds: string[]): EntityGridServ
   const server: EntityGridServerQuery = {};
   const bookTypes: string[] = [];
   const bookFormats: string[] = [];
+  const personRoles: string[] = [];
+  let includeAllPersonRoles = false;
   for (const id of filterIds) {
     if (id === "flags:favorite") {
       server.favorite = true;
@@ -650,12 +666,26 @@ export function buildServerQueryFromFilters(filterIds: string[]): EntityGridServ
       const bookFilter = bookFilterDefinitionFromId(id);
       if (bookFilter?.family === "type") bookTypes.push(bookFilter.code);
       else if (bookFilter?.family === "format") bookFormats.push(bookFilter.code);
+      else {
+        const personRoleFilter = personRoleFilterDefinitionFromId(id);
+        if (personRoleFilter?.code === PERSON_INCLUDE_ALL_ROLES_FILTER_DEF.code) {
+          includeAllPersonRoles = true;
+        } else if (personRoleFilter) {
+          personRoles.push(personRoleFilter.code);
+        }
+      }
     }
   }
   // The book families OR within themselves (any selected type/format matches) and
   // the server ANDs the two families together.
   if (bookTypes.length > 0) server.bookType = bookTypes.join(",");
   if (bookFormats.length > 0) server.bookFormat = bookFormats.join(",");
+  if (personRoles.length > 0) {
+    server.creditRole = personRoles.join(",");
+    server.excludeCreditRole = "";
+  } else if (includeAllPersonRoles) {
+    server.excludeCreditRole = "";
+  }
   return server;
 }
 
@@ -949,6 +979,10 @@ export function entityGridFilterFromId(
   const bookFilter = bookFilterDefinitionFromId(id);
   if (bookFilter) {
     return { id, count: 0, label: bookFilter.label, capabilityKind: CAPABILITY_KIND.classification, value: bookFilter.code };
+  }
+  const personRoleFilter = personRoleFilterDefinitionFromId(id);
+  if (personRoleFilter) {
+    return { id, count: 0, label: personRoleFilter.label, capabilityKind: CAPABILITY_KIND.classification, value: personRoleFilter.code };
   }
   return undefined;
 }

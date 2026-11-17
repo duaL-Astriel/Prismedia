@@ -42,4 +42,6 @@ engaged?: boolean;
 orphaned?: boolean;
 wanted?: boolean;
 acquisitionStatus?: string;
+creditRole?: string;
+excludeCreditRole?: string;
 };

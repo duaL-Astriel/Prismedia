@@ -57,6 +57,8 @@ export const appShellSections = [
     accent: colors.materialSpectrum.blue,
     items: [
       { label: "People", href: "/people", icon: "users" },
+      { label: "Artists", href: "/browse/artists", icon: "palette" },
+      { label: "Authors", href: "/browse/authors", icon: "feather" },
       { label: "Studios", href: "/studios", icon: "building" },
       { label: "Tags", href: "/tags", icon: "tags" },
       { label: "Collections", href: "/collections", icon: "folder" },
