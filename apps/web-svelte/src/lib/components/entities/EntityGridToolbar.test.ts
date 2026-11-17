@@ -26,4 +26,14 @@ describe("EntityGridToolbar", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Show filter row" }));
     expect(onBarsCollapsedChange).toHaveBeenLastCalledWith(false);
   });
+
+  it("renders the filter drawer inside the sticky toolbar stack alongside the search bar", () => {
+    render(EntityGridToolbar, { props: { drawerOpen: true } });
+
+    const toolbarStack = screen.getByRole("searchbox").closest(".toolbar-stack");
+    const filterPanel = screen.getByRole("region", { name: "Filter options" });
+    expect(toolbarStack).toContainElement(filterPanel);
+    expect(filterPanel).toHaveClass("filter-drawer-panel");
+    expect(screen.getByRole("button", { name: "Filters" })).toHaveAttribute("aria-controls", filterPanel.id);
+  });
 });

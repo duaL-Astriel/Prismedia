@@ -22,6 +22,7 @@
     drawerOpen: boolean;
     enableFeedView: boolean;
     entityKind?: string;
+    filterDrawerId?: string;
     hasCollapsibleRows: boolean;
     maxScale: number;
     mediaWall: boolean;
@@ -54,6 +55,7 @@
     drawerOpen,
     enableFeedView,
     entityKind,
+    filterDrawerId,
     hasCollapsibleRows,
     maxScale,
     mediaWall,
@@ -113,6 +115,7 @@
         size="sm"
         aria-label="Filters"
         aria-expanded={drawerOpen}
+        aria-controls={drawerOpen ? filterDrawerId : undefined}
         onclick={() => onDrawerOpenChange(!drawerOpen)}
       >
         <SlidersHorizontal class="h-3.5 w-3.5" />

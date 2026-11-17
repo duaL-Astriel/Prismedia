@@ -231,6 +231,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+### Fixed
+
+- The library grid filter drawer now stays anchored beneath the sticky search toolbar and floats above grid content while scrolling instead of remaining above the grid.
+
 - Mobile web browsers can no longer scroll the outer document past the app shell and push the sticky top header out of view; page scrolling stays contained within the main content area.
 
 - Navigating between items in the image lightbox keeps the preview visible while the full-resolution image loads or hydrates, instead of turning the media invisible for several seconds after each step.

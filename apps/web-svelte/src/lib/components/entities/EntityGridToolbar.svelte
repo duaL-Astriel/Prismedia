@@ -10,6 +10,8 @@
     EntityGridSortDir,
     EntityGridViewMode,
   } from "$lib/entities/entity-grid";
+  import type { EntityPickerItem } from "$lib/components/forms/EntityPicker.svelte";
+  import EntityGridFilterDrawer from "./EntityGridFilterDrawer.svelte";
   import EntityGridMobileRail from "./EntityGridMobileRail.svelte";
   import EntityGridToolbarActiveFilters from "./EntityGridToolbarActiveFilters.svelte";
   import EntityGridToolbarHero from "./EntityGridToolbarHero.svelte";
@@ -30,6 +32,12 @@
     /** Kind code of the grid, used to offer kind-specific sorts (e.g. references for taxonomy). */
     entityKind?: string;
     filterOptions: EntityGridFilterOption[];
+    /** Whether tag autocomplete searches should suppress NSFW tags. */
+    hideNsfw?: boolean;
+    /** Resolved tag items keyed by tag ID, supplied by the parent EntityGrid. */
+    knownTags?: ReadonlyMap<string, EntityPickerItem>;
+    /** Hide the book type/format chips (constrained views that already lock those filters). */
+    lockBookFilters?: boolean;
     maxScale: number;
     minScale: number;
     /** Explicit mobile layout override; defaults to matching `(max-width: 639.98px)`. */
@@ -49,6 +57,8 @@
     onSortByChange: (sortBy: EntityGridSort) => void;
     onSortDirChange: (sortDir: EntityGridSortDir) => void;
     onReshuffle: () => void;
+    /** Reports newly picked tag items so parent toolbars can render full tag titles. */
+    onTagItemsKnown?: (items: EntityPickerItem[]) => void;
     onViewModeChange: (viewMode: EntityGridViewMode) => void;
     presets: FilterPreset[];
     mediaWall: boolean;
@@ -69,6 +79,9 @@
     drawerOpen,
     entityKind,
     filterOptions,
+    hideNsfw = false,
+    knownTags,
+    lockBookFilters = false,
     maxScale,
     minScale,
     mobile: mobileOverride,
@@ -86,6 +99,7 @@
     onSortByChange,
     onSortDirChange,
     onReshuffle,
+    onTagItemsKnown,
     onViewModeChange,
     presets,
     mediaWall,
@@ -128,6 +142,9 @@
     () => isMobile && dockControls,
     () => drawerOpen || mobilePinnedOpen,
   );
+
+  const toolbarId = $props.id();
+  const filterDrawerId = `${toolbarId}-filters`;
 
   onMount(() => {
     const cleanups: (() => void)[] = [];
@@ -201,6 +218,7 @@
         {drawerOpen}
         {enableFeedView}
         {entityKind}
+        {filterDrawerId}
         {hasCollapsibleRows}
         {maxScale}
         {mediaWall}
@@ -235,6 +253,26 @@
           {onClearFilters}
         />
       {/if}
+
+      {#if drawerOpen}
+        <div
+          id={filterDrawerId}
+          class="filter-drawer-panel"
+          role="region"
+          aria-label="Filter options"
+        >
+          <EntityGridFilterDrawer
+            {activeFilterIds}
+            {filterOptions}
+            {entityKind}
+            {lockBookFilters}
+            {hideNsfw}
+            {knownTags}
+            {onTagItemsKnown}
+            {onActiveFilterIdsChange}
+          />
+        </div>
+      {/if}
     {/if}
   </div>
 </div>
@@ -256,7 +294,8 @@
   .toolbar-shell {
     position: sticky;
     top: var(--prismedia-canvas-header-height, 3.5rem);
-    z-index: 4;
+    /* Float above grid cards (2), detail sections (3), and pagination (4), below bulk-dock (30) and header (40). */
+    z-index: 20;
     display: flex;
     flex-direction: column;
     padding-top: 0.5rem;
@@ -279,6 +318,7 @@
   }
 
   .toolbar-stack {
+    position: relative;
     display: flex;
     flex-direction: column;
     min-width: 0;
@@ -287,6 +327,41 @@
 
   .toolbar-stack.is-passthrough {
     pointer-events: none;
+  }
+
+  /*
+   * Anchor the filter panel to the sticky toolbar stack so it moves with the
+   * search bar and floats over the element grid without shifting scroll.
+   */
+  .filter-drawer-panel {
+    position: absolute;
+    top: calc(100% + 0.35rem);
+    left: 0;
+    right: 0;
+    z-index: 2;
+    max-height: max(
+      14rem,
+      min(
+        38rem,
+        calc(
+          100dvh - var(--prismedia-canvas-header-height, 3.5rem) -
+            var(--prismedia-desktop-bottom-clearance, 0px) - 11rem
+        )
+      )
+    );
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--toolbar-detail-border, var(--color-border-default));
+    border-radius: var(--radius-sm, 6px);
+    background: var(--color-surface-1, #111214);
+    box-shadow: var(--shadow-elevated);
+  }
+
+  .filter-drawer-panel > :global(.surface-well) {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   .toolbar-stack :global(.toolbar-bar) {

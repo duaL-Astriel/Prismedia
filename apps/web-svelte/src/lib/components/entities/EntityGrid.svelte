@@ -31,7 +31,6 @@
   import type { EntityThumbnailCard } from "$lib/entities/entity-thumbnail";
   import { isCollectionEntityType, type CollectionEntityType } from "$lib/collections/models";
   import BulkSelectionBar from "./BulkSelectionBar.svelte";
-  import EntityGridFilterDrawer from "./EntityGridFilterDrawer.svelte";
   import EntityGridFilterSheet from "./EntityGridFilterSheet.svelte";
   import EntityGridContent from "./EntityGridContent.svelte";
   import EntityGridPagination from "./EntityGridPagination.svelte";
@@ -715,6 +714,9 @@
     {drawerOpen}
     {entityKind}
     {filterOptions}
+    hideNsfw={effectiveNsfwMode !== "show"}
+    {knownTags}
+    {lockBookFilters}
     {maxScale}
     {mediaWall}
     {minScale}
@@ -733,6 +735,7 @@
     onSortByChange={setSortBy}
     onSortDirChange={setSortDir}
     onReshuffle={reshuffle}
+    onTagItemsKnown={recordKnownTagItems}
     onViewModeChange={setViewMode}
     {presets}
     {query}
@@ -766,17 +769,6 @@
       onTagItemsKnown={recordKnownTagItems}
       onActiveFilterIdsChange={setFilterIds}
       onClearFilters={clearFilters}
-    />
-  {:else if drawerOpen}
-    <EntityGridFilterDrawer
-      activeFilterIds={filterIds}
-      {filterOptions}
-      {entityKind}
-      {lockBookFilters}
-      hideNsfw={effectiveNsfwMode !== "show"}
-      {knownTags}
-      onTagItemsKnown={recordKnownTagItems}
-      onActiveFilterIdsChange={setFilterIds}
     />
   {/if}
 
