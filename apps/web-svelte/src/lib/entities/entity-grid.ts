@@ -41,8 +41,9 @@ import {
 } from "./entity-thumbnail";
 import { bookFilterDefinitionFromId } from "./entity-grid-book-filters";
 import {
-  PERSON_INCLUDE_ALL_ROLES_FILTER_DEF,
+  applyPersonRoleFiltersToServerQuery,
   personRoleFilterDefinitionFromId,
+  personRoleFilterOptionFromId,
 } from "./entity-grid-person-filters";
 import {
   cardMatchesTagFilter,
@@ -640,8 +641,6 @@ export function buildServerQueryFromFilters(filterIds: string[]): EntityGridServ
   const server: EntityGridServerQuery = {};
   const bookTypes: string[] = [];
   const bookFormats: string[] = [];
-  const personRoles: string[] = [];
-  let includeAllPersonRoles = false;
   const tagIds: string[] = [];
   for (const id of filterIds) {
     if (id === "flags:favorite") {
@@ -691,26 +690,13 @@ export function buildServerQueryFromFilters(filterIds: string[]): EntityGridServ
       const bookFilter = bookFilterDefinitionFromId(id);
       if (bookFilter?.family === "type") bookTypes.push(bookFilter.code);
       else if (bookFilter?.family === "format") bookFormats.push(bookFilter.code);
-      else {
-        const personRoleFilter = personRoleFilterDefinitionFromId(id);
-        if (personRoleFilter?.code === PERSON_INCLUDE_ALL_ROLES_FILTER_DEF.code) {
-          includeAllPersonRoles = true;
-        } else if (personRoleFilter) {
-          personRoles.push(personRoleFilter.code);
-        }
-      }
     }
   }
   // The book families OR within themselves (any selected type/format matches) and
   // the server ANDs the two families together.
   if (bookTypes.length > 0) server.bookType = bookTypes.join(",");
   if (bookFormats.length > 0) server.bookFormat = bookFormats.join(",");
-  if (personRoles.length > 0) {
-    server.creditRole = personRoles.join(",");
-    server.excludeCreditRole = "";
-  } else if (includeAllPersonRoles) {
-    server.excludeCreditRole = "";
-  }
+  applyPersonRoleFiltersToServerQuery(filterIds, server);
   if (tagIds.length > 0) server.tagIds = tagIds.join(",");
   return server;
 }
@@ -1006,9 +992,9 @@ export function entityGridFilterFromId(
   if (bookFilter) {
     return { id, count: 0, label: bookFilter.label, capabilityKind: CAPABILITY_KIND.classification, value: bookFilter.code };
   }
-  const personRoleFilter = personRoleFilterDefinitionFromId(id);
-  if (personRoleFilter) {
-    return { id, count: 0, label: personRoleFilter.label, capabilityKind: CAPABILITY_KIND.classification, value: personRoleFilter.code };
+  const personRoleOption = personRoleFilterOptionFromId(id);
+  if (personRoleOption) {
+    return personRoleOption;
   }
   const tagId = tagIdFromFilterId(id);
   if (tagId) {

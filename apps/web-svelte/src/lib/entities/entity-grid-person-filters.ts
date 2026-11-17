@@ -1,4 +1,5 @@
-import { CREDIT_ROLE, type CreditRoleCode } from "$lib/api/generated/codes";
+import { CAPABILITY_KIND, CREDIT_ROLE, type CreditRoleCode } from "$lib/api/generated/codes";
+import type { ListEntitiesParams } from "$lib/api/generated/model";
 
 /** Credit roles grouped under the Browse -> Artists view. */
 export const ARTIST_CREDIT_ROLES = [
@@ -62,4 +63,38 @@ export function personRoleFilterDefinitionFromId(
   id: string,
 ): EntityGridPersonRoleFilterDefinition | undefined {
   return PERSON_ROLE_FILTER_BY_ID.get(id);
+}
+
+/** Resolves a persisted person credit-role filter ID into an option entry for chips and presets. */
+export function personRoleFilterOptionFromId(id: string) {
+  const definition = PERSON_ROLE_FILTER_BY_ID.get(id);
+  if (!definition) return undefined;
+  return {
+    id,
+    count: 0,
+    label: definition.label,
+    capabilityKind: CAPABILITY_KIND.classification,
+    value: definition.code,
+  };
+}
+
+/** Applies any selected person credit-role filter IDs to the outgoing list query. */
+export function applyPersonRoleFiltersToServerQuery(
+  filterIds: readonly string[],
+  server: Pick<ListEntitiesParams, "creditRole" | "excludeCreditRole">,
+): void {
+  const roles: string[] = [];
+  let includeAll = false;
+  for (const id of filterIds) {
+    const definition = PERSON_ROLE_FILTER_BY_ID.get(id);
+    if (!definition) continue;
+    if (definition.code === PERSON_INCLUDE_ALL_ROLES_FILTER_DEF.code) includeAll = true;
+    else if (!roles.includes(definition.code)) roles.push(definition.code);
+  }
+  if (roles.length > 0) {
+    server.creditRole = roles.join(",");
+    server.excludeCreditRole = "";
+  } else if (includeAll) {
+    server.excludeCreditRole = "";
+  }
 }
