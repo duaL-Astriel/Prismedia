@@ -11,6 +11,8 @@
     canClearFilters: boolean;
     onActiveFilterIdsChange: (ids: string[]) => void;
     onClearFilters: () => void;
+    /** Renders as a standalone flow strip without attached toolbar-bar overlap chrome. */
+    standalone?: boolean;
   }
 
   let {
@@ -19,6 +21,7 @@
     canClearFilters,
     onActiveFilterIdsChange,
     onClearFilters,
+    standalone = false,
   }: Props = $props();
 
   function removeFilter(id: string) {
@@ -26,7 +29,7 @@
   }
 </script>
 
-<div class="filter-row toolbar-bar" transition:slide={{ duration: 200, easing: cubicOut }}>
+<div class={standalone ? "filter-row-standalone" : "filter-row toolbar-bar"} transition:slide={{ duration: 200, easing: cubicOut }}>
   <div class="filter-scroll" aria-live="polite">
     {#if activeFilters.length > 0}
       <span class="filter-chip-label" aria-hidden="true">
@@ -65,6 +68,14 @@
     min-height: 2.1rem;
     padding: calc(0.4rem + var(--toolbar-bar-overlap)) 0.7rem 0.4rem;
     pointer-events: auto;
+  }
+
+  .filter-row-standalone {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+    padding: 0.15rem 0;
   }
 
   .filter-scroll {

@@ -14,6 +14,9 @@
     ChevronLeft,
     ChevronRight,
     Image as ImageIcon,
+    Maximize,
+    MoveHorizontal,
+    MoveVertical,
   } from "@lucide/svelte";
   import { apiAssetUrl as toApiUrl, apiPath } from "$lib/api/orval-fetch";
   import type { ImageListItemDto } from "$lib/entities/media-view-models";
@@ -33,11 +36,15 @@
   } from "$lib/gestures/wipe-gesture";
   import NsfwBlur from "./nsfw/NsfwBlur.svelte";
   import {
+    COMIC_FIT_MODE,
     comicPreloadIndexes,
     comicSpreadForIndex,
     comicTapZone,
     nextComicIndex,
     previousComicIndex,
+    resolveInitialComicFitMode,
+    writeComicFitPreference,
+    type ComicFitMode,
     type ComicPageMode,
   } from "./comic-reader";
 
@@ -48,6 +55,8 @@
     startX: number;
     startY: number;
     startTime: number;
+    startScrollTop: number;
+    startScrollLeft: number;
     moved: boolean;
     axis: WipeAxis;
   }
@@ -61,6 +70,7 @@
     images: ImageListItemDto[];
     initialIndex: number;
     initialMode?: ReaderMode;
+    initialFitMode?: ComicFitMode;
     readingDirection?: PageReadingDirectionCode;
     coverOrdinal?: number | null;
     doublePageOrdinals?: readonly number[];
@@ -71,6 +81,7 @@
     onClose: () => void;
     onIndexChange?: (index: number) => void;
     onModeChange?: (mode: ReaderMode) => void;
+    onFitModeChange?: (fitMode: ComicFitMode) => void;
     onNextChapter?: () => void | Promise<void>;
     /** Optional transport from a companion rendition, such as the matched audiobook. */
     companionControls?: Snippet;
@@ -80,6 +91,7 @@
     images,
     initialIndex,
     initialMode = READER_MODE.paged,
+    initialFitMode,
     readingDirection = PAGE_READING_DIRECTION.leftToRight,
     coverOrdinal,
     doublePageOrdinals = [],
@@ -90,12 +102,71 @@
     onClose,
     onIndexChange,
     onModeChange,
+    onFitModeChange,
     onNextChapter,
     companionControls,
   }: Props = $props();
 
+  const FIT_MODE_OPTIONS = [
+    { mode: COMIC_FIT_MODE.screen, label: "Screen", ariaLabel: "Fit to screen", icon: Maximize },
+    { mode: COMIC_FIT_MODE.width, label: "Width", ariaLabel: "Fit to width", icon: MoveHorizontal },
+    { mode: COMIC_FIT_MODE.height, label: "Height", ariaLabel: "Fit to height", icon: MoveVertical },
+  ] as const;
+
+  const WEBTOON_FIT_CLASSES: Record<
+    ComicFitMode,
+    { stageOverflow: string; column: string; page: string; blur: string; image: string }
+  > = {
+    [COMIC_FIT_MODE.screen]: {
+      stageOverflow: "overflow-x-hidden",
+      column: "mx-auto flex min-h-full w-full max-w-4xl flex-col items-center",
+      page: "w-full",
+      blur: "w-full",
+      image: "block h-auto w-full bg-surface-1",
+    },
+    [COMIC_FIT_MODE.width]: {
+      stageOverflow: "overflow-x-hidden",
+      column: "mx-auto flex min-h-full w-full flex-col items-center",
+      page: "w-full",
+      blur: "w-full",
+      image: "block h-auto w-full bg-surface-1",
+    },
+    [COMIC_FIT_MODE.height]: {
+      stageOverflow: "overflow-x-auto",
+      column: "mx-auto flex min-h-full w-max min-w-full flex-col items-center",
+      page: "flex w-max min-w-full justify-center",
+      blur: "flex justify-center",
+      image: "block h-dvh w-auto max-w-none bg-surface-1",
+    },
+  };
+
+  const PAGED_FIT_CLASSES: Record<
+    ComicFitMode,
+    { stageOverflow: string; spread: string; blur: string; image: string }
+  > = {
+    [COMIC_FIT_MODE.screen]: {
+      stageOverflow: "overflow-hidden",
+      spread: "mx-auto my-auto flex h-full w-full items-center justify-center gap-2",
+      blur: "flex h-full min-w-0 flex-1 items-center justify-center",
+      image: "max-h-full max-w-full object-contain shadow-[0_0_30px_rgba(0,0,0,0.45)]",
+    },
+    [COMIC_FIT_MODE.width]: {
+      stageOverflow: "overflow-y-auto overflow-x-hidden",
+      spread: "mx-auto my-auto flex w-full items-start justify-center gap-2",
+      blur: "flex min-w-0 flex-1 justify-center",
+      image: "block h-auto w-full shadow-[0_0_30px_rgba(0,0,0,0.45)]",
+    },
+    [COMIC_FIT_MODE.height]: {
+      stageOverflow: "overflow-x-auto overflow-y-hidden",
+      spread: "mx-auto flex h-full w-max min-w-full items-center justify-center gap-2",
+      blur: "flex h-full shrink-0 items-center justify-center",
+      image: "block h-full w-auto max-w-none shadow-[0_0_30px_rgba(0,0,0,0.45)]",
+    },
+  };
+
   let shell = $state<ReturnType<typeof ReaderShell>>();
   let readerMode = $state<ReaderMode>(untrack(() => initialMode));
+  let fitMode = $state<ComicFitMode>(untrack(() => resolveInitialComicFitMode(initialFitMode)));
   let pageMode = $state<ComicPageMode>("single");
   let firstPageIsCover = $state(untrack(() => coverOrdinal === undefined || coverOrdinal === 0));
   let index = $state(untrack(() => initialIndex));
@@ -224,6 +295,9 @@
     return { offset, isEndPage: false, spreadImages: resolvePreviewSpread(prevIdx) };
   });
 
+  const activeWebtoonClasses = $derived(WEBTOON_FIT_CLASSES[fitMode]);
+  const activePagedClasses = $derived(PAGED_FIT_CLASSES[fitMode]);
+
   function setReaderIndex(nextIndex: number) {
     const maxIndex =
       readerMode === READER_MODE.paged && hasEndAction ? images.length : Math.max(0, images.length - 1);
@@ -250,6 +324,13 @@
       setReaderIndex(lastReadableIndex());
     }
     onModeChange?.(mode);
+  }
+
+  function setFitMode(nextFitMode: ComicFitMode) {
+    if (nextFitMode === fitMode) return;
+    fitMode = nextFitMode;
+    writeComicFitPreference(nextFitMode);
+    onFitModeChange?.(nextFitMode);
   }
 
   function goNext() {
@@ -358,20 +439,36 @@
     };
   }
 
+  function pagedScrollCapabilities(stage: HTMLElement) {
+    return {
+      canScrollVertically:
+        fitMode === COMIC_FIT_MODE.width && stage.scrollHeight > stage.clientHeight + 2,
+      canScrollHorizontally:
+        fitMode === COMIC_FIT_MODE.height && stage.scrollWidth > stage.clientWidth + 2,
+    };
+  }
+
   function handleReaderPointerDown(event: PointerEvent) {
     if ((event.target as HTMLElement).closest("[data-reader-control]")) return;
+    const stage = event.currentTarget as HTMLElement;
     readerPointerGesture = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
       startTime: Date.now(),
+      startScrollTop: stage.scrollTop,
+      startScrollLeft: stage.scrollLeft,
       moved: false,
       axis: "none",
     };
-    // Capture so a paged swipe that drifts off the stage still resolves here.
-    // Webtoon mode scrolls natively, so it must not capture the pointer.
-    if (readerMode === READER_MODE.paged && event.pointerType !== "mouse") {
-      (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+    // Capture so a non-scrolling paged swipe that drifts off the stage still resolves here.
+    // Webtoon mode and scrollable paged fit modes scroll natively, so they must not capture.
+    if (
+      readerMode === READER_MODE.paged
+      && fitMode === COMIC_FIT_MODE.screen
+      && event.pointerType !== "mouse"
+    ) {
+      stage.setPointerCapture?.(event.pointerId);
     }
   }
 
@@ -385,14 +482,20 @@
 
     if (readerMode !== READER_MODE.paged || event.pointerType === "mouse") return;
 
+    const stage = event.currentTarget as HTMLElement;
+    const { canScrollVertically, canScrollHorizontally } = pagedScrollCapabilities(stage);
+
     if (readerPointerGesture.axis === "none") {
-      const locked = lockWipeAxis(deltaX, deltaY);
+      const locked = lockWipeAxis(deltaX, deltaY, {
+        allowHorizontal: !canScrollHorizontally,
+        allowDismiss: !canScrollVertically,
+      });
       if (locked === "none") return;
       readerPointerGesture.axis = locked;
       outgoingSpread = null;
     }
 
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const rect = stage.getBoundingClientRect();
     const { canGoLeft, canGoRight } = pagedWipeCapabilities();
 
     if (readerPointerGesture.axis === "horizontal") {
@@ -428,22 +531,36 @@
       clearReaderPointerGesture();
       return;
     }
+    const stage = event.currentTarget as HTMLElement;
     const gesture = readerPointerGesture;
     readerPointerGesture = null;
 
     // Swipe detection needs the gesture's start point. A pointerup without a tracked
     // pointerdown (e.g. a synthetic mouse click) still falls through to the tap zones.
     if (gesture && gesture.pointerId === event.pointerId) {
+      const scrolled =
+        Math.abs(stage.scrollTop - gesture.startScrollTop) > 2
+        || Math.abs(stage.scrollLeft - gesture.startScrollLeft) > 2;
+      if (scrolled) {
+        if (gesture.axis !== "none") wipeController.snapBack();
+        return;
+      }
+
       const dx = event.clientX - gesture.startX;
       const dy = event.clientY - gesture.startY;
       const elapsed = Date.now() - gesture.startTime;
 
       // Touch swipes (paged mode only): horizontal turns the page, a downward swipe
-      // dismisses the reader — matching the lightbox gestures. Webtoon mode scrolls
-      // vertically, so it keeps tap-only navigation.
+      // dismisses the reader — except along any axis currently owned by stage scroll.
       if (readerMode === READER_MODE.paged && event.pointerType !== "mouse") {
-        const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-        const effectiveAxis = gesture.axis !== "none" ? gesture.axis : lockWipeAxis(dx, dy);
+        const rect = stage.getBoundingClientRect();
+        const { canScrollVertically, canScrollHorizontally } = pagedScrollCapabilities(stage);
+        const effectiveAxis = gesture.axis !== "none"
+          ? gesture.axis
+          : lockWipeAxis(dx, dy, {
+              allowHorizontal: !canScrollHorizontally,
+              allowDismiss: !canScrollVertically,
+            });
         const { canGoLeft, canGoRight } = pagedWipeCapabilities();
         const commit = resolveWipeCommit({
           axis: effectiveAxis,
@@ -454,7 +571,7 @@
           stageHeight: rect.height,
           canGoLeft,
           canGoRight,
-          canDismiss: true,
+          canDismiss: !canScrollVertically,
           minDistancePx: READER_SWIPE_THRESHOLD,
         });
 
@@ -498,7 +615,7 @@
     }
 
     // Tap zones: left/right turn pages on touch, centre toggles controls.
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const rect = stage.getBoundingClientRect();
     const zone = comicTapZone(event.clientX - rect.left, rect.width);
     if (event.pointerType === "mouse") {
       if (zone === "controls") shell?.toggleControls();
@@ -539,6 +656,23 @@
       programmaticWebtoonScroll = false;
     });
   }
+
+  async function resetPagedScroll() {
+    await tick();
+    if (!pagedStage) return;
+    pagedStage.scrollTop = 0;
+    pagedStage.scrollLeft = rightToLeft
+      ? Math.max(0, pagedStage.scrollWidth - pagedStage.clientWidth)
+      : 0;
+  }
+
+  $effect(() => {
+    if (readerMode !== READER_MODE.paged || !pagedStage) return;
+    index;
+    fitMode;
+    pageMode;
+    void resetPagedScroll();
+  });
 
   $effect(() => {
     if (readerMode !== READER_MODE.webtoon) return;
@@ -609,6 +743,25 @@
       </Button>
     </div>
 
+    <div class="flex items-center gap-1 border-l border-border-subtle pl-2" role="group" aria-label="Fit mode">
+      {#each FIT_MODE_OPTIONS as option (option.mode)}
+        {@const Icon = option.icon}
+        <Button
+          variant="outline"
+          size="sm"
+          type="button"
+          onclick={() => setFitMode(option.mode)}
+          aria-pressed={fitMode === option.mode}
+          class="aria-pressed:bg-accent aria-pressed:text-accent-foreground"
+          aria-label={option.ariaLabel}
+          title={option.ariaLabel}
+        >
+          <Icon class="h-4 w-4" />
+          <span class="hidden lg:inline">{option.label}</span>
+        </Button>
+      {/each}
+    </div>
+
     {#if readerMode === READER_MODE.paged}
       <div class="hidden items-center gap-1 border-l border-border-subtle pl-2 sm:flex">
         <Button variant="outline" size="sm"
@@ -641,21 +794,22 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       bind:this={webtoonStage}
-      class="reader-stage overflow-y-auto bg-black"
+      data-comic-fit-mode={fitMode}
+      class={`reader-stage flex-1 min-h-0 w-full overflow-y-auto bg-black ${activeWebtoonClasses.stageOverflow}`}
       onpointerdown={handleReaderPointerDown}
       onpointermove={handleReaderPointerMove}
       onpointerup={handleReaderPointerUp}
       onpointercancel={clearReaderPointerGesture}
       onscroll={handleWebtoonScroll}
     >
-      <div class="mx-auto flex min-h-full w-full max-w-4xl flex-col items-center">
+      <div class={activeWebtoonClasses.column}>
         {#each images as image, pageIndex (image.id)}
-          <div class="w-full" data-comic-page-index={pageIndex}>
-            <NsfwBlur isNsfw={false} class="w-full">
+          <div class={activeWebtoonClasses.page} data-comic-page-index={pageIndex}>
+            <NsfwBlur isNsfw={false} class={activeWebtoonClasses.blur}>
               <img
                 src={imageSrc(image)}
                 alt={image.title}
-                class="block h-auto w-full bg-surface-1"
+                class={activeWebtoonClasses.image}
                 loading="lazy"
                 decoding="async"
               />
@@ -687,15 +841,9 @@
       </div>
     </div>
   {:else}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      bind:this={pagedStage}
-      class="reader-stage reader-stage-paged relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black p-0 sm:px-14 sm:py-3"
+      class="relative flex flex-1 min-h-0 w-full overflow-hidden bg-black"
       style:background={isVerticalDismissWipe ? `rgb(0 0 0 / ${wipeVisuals.backdropOpacity})` : undefined}
-      onpointerdown={handleReaderPointerDown}
-      onpointermove={handleReaderPointerMove}
-      onpointerup={handleReaderPointerUp}
-      onpointercancel={clearReaderPointerGesture}
     >
       {#if images.length > 1 || hasEndAction}
         <Button variant="outline" size="sm"
@@ -721,12 +869,8 @@
       {/if}
 
       {#snippet pagedSpreadContent(spreadImages: ImageListItemDto[], isEndPage: boolean, interactive: boolean)}
-        <div
-          class={`flex h-full w-full items-center justify-center gap-2 ${
-            spreadImages.length > 1 ? "max-w-7xl" : "max-w-5xl"
-          }`}
-        >
-          {#if isEndPage}
+        {#if isEndPage}
+          <div class="my-auto flex w-full flex-col items-center justify-center">
             <div class="reader-next-chapter-page text-center">
               <div class="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-text-accent">
                 {hasNextChapter ? "Next Chapter" : "No next chapter"}
@@ -747,22 +891,28 @@
                 </Button>
               {/if}
             </div>
-          {:else}
+          </div>
+        {:else}
+          <div
+            class={fitMode === COMIC_FIT_MODE.screen
+              ? `${activePagedClasses.spread} ${spreadImages.length > 1 ? "max-w-7xl" : "max-w-5xl"}`
+              : activePagedClasses.spread}
+          >
             {#each spreadImages as image (image.id)}
-              <NsfwBlur isNsfw={false} class="flex h-full min-w-0 flex-1 items-center justify-center">
+              <NsfwBlur isNsfw={false} class={activePagedClasses.blur}>
                 <img
                   src={imageSrc(image)}
                   alt={interactive ? image.title : ""}
                   aria-hidden={interactive ? undefined : true}
-                  class="max-h-full max-w-full object-contain shadow-[0_0_30px_rgba(0,0,0,0.45)]"
+                  class={activePagedClasses.image}
                   loading={interactive ? "eager" : undefined}
                   decoding={interactive ? "sync" : undefined}
                   draggable="false"
                 />
               </NsfwBlur>
             {/each}
-          {/if}
-        </div>
+          </div>
+        {/if}
       {/snippet}
 
       {#if outgoingSpread && (wipeVisuals.phase === "entering" || wipeVisuals.phase === "settling")}
@@ -776,20 +926,31 @@
         </div>
       {/if}
 
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="comic-wipe-pane p-0 sm:px-14 sm:py-3"
-        data-comic-wipe-active
-        style:transform={wipeActiveTransform}
-        style:transition={wipeTransitionStyle}
-        style:opacity={isVerticalDismissWipe ? Math.max(0.45, wipeVisuals.backdropOpacity) : undefined}
+        bind:this={pagedStage}
+        data-comic-fit-mode={fitMode}
+        class={`reader-stage reader-stage-paged flex h-full w-full flex-1 min-h-0 flex-col bg-black p-0 sm:px-14 sm:py-3 ${activePagedClasses.stageOverflow}`}
+        onpointerdown={handleReaderPointerDown}
+        onpointermove={handleReaderPointerMove}
+        onpointerup={handleReaderPointerUp}
+        onpointercancel={clearReaderPointerGesture}
       >
-        {@render pagedSpreadContent(
-          displayedSpread
-            .map((pageIndex) => images[pageIndex])
-            .filter((img): img is ImageListItemDto => Boolean(img)),
-          showingChapterEndPage,
-          true,
-        )}
+        <div
+          class="comic-wipe-active-stage"
+          data-comic-wipe-active
+          style:transform={wipeActiveTransform}
+          style:transition={wipeTransitionStyle}
+          style:opacity={isVerticalDismissWipe ? Math.max(0.45, wipeVisuals.backdropOpacity) : undefined}
+        >
+          {@render pagedSpreadContent(
+            displayedSpread
+              .map((pageIndex) => images[pageIndex])
+              .filter((img): img is ImageListItemDto => Boolean(img)),
+            showingChapterEndPage,
+            true,
+          )}
+        </div>
       </div>
 
       {#if adjacentWipePreview}
@@ -811,10 +972,28 @@
     user-select: none;
   }
 
+  .reader-stage-paged[data-comic-fit-mode="width"] {
+    touch-action: pan-y;
+  }
+
+  .reader-stage-paged[data-comic-fit-mode="height"] {
+    touch-action: pan-x;
+  }
+
+  .comic-wipe-active-stage {
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
+    width: 100%;
+    min-height: 100%;
+    will-change: transform;
+  }
+
   .comic-wipe-pane {
     position: absolute;
     inset: 0;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     will-change: transform;

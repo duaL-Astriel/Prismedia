@@ -10,12 +10,17 @@
   import { RELATIONSHIP_CODE } from "$lib/api/generated/codes";
   import { getTagPolicyCapability } from "$lib/api/capabilities";
   import { entityCardToDetailCard, REFERENCE_STANDALONE_METADATA_SECTION_IDS, type EntityDetailCardFull } from "$lib/entities/entity-detail";
-  import { entityCardToThumbnailCard } from "$lib/entities/entity-grid";
-  import { resolveEntityHref } from "$lib/entities/entity-routes";
   import type { EntityThumbnailCard } from "$lib/entities/entity-thumbnail";
   import type { EntityDetailActionButton } from "$lib/components/entities/entity-detail-types";
   import EntityDetail from "$lib/components/entities/EntityDetail.svelte";
   import EntityGrid from "$lib/components/entities/EntityGrid.svelte";
+  import EntityGridLightbox from "$lib/components/entities/EntityGridLightbox.svelte";
+  import { GridLightboxController } from "$lib/components/entities/entity-grid-lightbox-controller.svelte";
+  import {
+    applyRatingToCards,
+    buildRelatedThumbnailCards,
+    isLightboxableCard,
+  } from "$lib/components/entities/entity-grid-lightbox";
   import MetadataCard from "$lib/components/MetadataCard.svelte";
   import NameInputDialog from "$lib/components/entities/NameInputDialog.svelte";
   import EntityPicker, { type EntityPickerItem } from "$lib/components/forms/EntityPicker.svelte";
@@ -23,6 +28,7 @@
   import { addTagAlias, removeTagAlias, mergeTag } from "$lib/api/taxonomy";
 
   let relatedCards = $state<EntityThumbnailCard[]>([]);
+  const gridLightbox = new GridLightboxController();
   let settingCoverEntityId = $state<string | null>(null);
   let settingCoverSuccessId = $state<string | null>(null);
 
@@ -49,6 +55,7 @@
   const detail = useEntityDetailPage<EntityCardFull>({
     loadKey: () => page.params.id ?? "",
     load: async ({ signal }) => {
+      gridLightbox.close();
       const id = page.params.id ?? "";
       const nextTag = await fetchEntity(id, { signal });
       try {
@@ -56,8 +63,9 @@
           { referencedBy: id, relationshipCode: RELATIONSHIP_CODE.tags, limit: 1000 },
           { signal },
         );
-        relatedCards = response.items.map((item) =>
-          entityCardToThumbnailCard(item, resolveEntityHref(item.kind, item.id)),
+        relatedCards = buildRelatedThumbnailCards(
+          response.items,
+          `${page.url.pathname}${page.url.search}`,
         );
       } catch (error) {
         if (signal.aborted) throw error;
@@ -214,6 +222,8 @@
             prefsKey={`tag-${tag.id}-content`}
             emptyTitle="No content"
             emptyMessage="No content tagged with this tag."
+            canActivateCard={isLightboxableCard}
+            onCardActivate={(card, visibleCards) => gridLightbox.open(card, visibleCards)}
           >
             {#snippet cardAction(card)}
               <Button
@@ -329,6 +339,14 @@
     {/if}
   </EntityDetailPageState>
 </div>
+
+<EntityGridLightbox
+  controller={gridLightbox}
+  sharedKey={tag ? `tag-${tag.id}` : undefined}
+  onRatingUpdated={(entityId, rating) => {
+    relatedCards = applyRatingToCards(relatedCards, entityId, rating);
+  }}
+/>
 
 <style>
   .detail-page { display: grid; gap: 1.25rem; padding: 0; max-width: none; margin: 0; }

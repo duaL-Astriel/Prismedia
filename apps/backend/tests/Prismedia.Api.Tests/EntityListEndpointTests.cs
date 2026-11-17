@@ -129,6 +129,58 @@ public sealed class EntityListEndpointTests {
         Assert.Equal(0, entityReadService.ListCallCount);
     }
 
+    [Fact]
+    public async Task TagIdsQueryAcceptsMultipleGuidsAndForwardsToEntityReadService() {
+        var entityReadService = new CapturingEntityReadService();
+        using var factory = CreateFactory(entityReadService);
+        using var client = factory.CreateAuthenticatedClient();
+        var tagA = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var tagB = Guid.Parse("22222222-2222-2222-2222-222222222222");
+
+        using var response = await client.GetAsync(
+            $"/api/entities?tagIds={Uri.EscapeDataString($"{tagA},{tagB},{tagA}")}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal([tagA, tagB], entityReadService.TagIds);
+    }
+
+    [Fact]
+    public async Task KindSpecificListAndShelfForwardTagIds() {
+        var entityReadService = new CapturingEntityReadService();
+        using var factory = CreateFactory(entityReadService);
+        using var client = factory.CreateAuthenticatedClient();
+        var tagA = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var tagB = Guid.Parse("22222222-2222-2222-2222-222222222222");
+
+        using var booksResponse = await client.GetAsync(
+            $"/api/books?tagIds={Uri.EscapeDataString($"{tagA},{tagB}")}");
+        using var shelfResponse = await client.GetAsync(
+            $"/api/entities/shelf?tagIds={Uri.EscapeDataString($"{tagA},{tagB}")}");
+
+        Assert.Equal(HttpStatusCode.OK, booksResponse.StatusCode);
+        Assert.Equal(EntityKind.Book.ToCode(), entityReadService.Kind);
+        Assert.Equal([tagA, tagB], entityReadService.TagIds);
+
+        Assert.Equal(HttpStatusCode.OK, shelfResponse.StatusCode);
+        Assert.Equal([tagA, tagB], entityReadService.ShelfQuery?.TagIds);
+    }
+
+    [Theory]
+    [InlineData("not-a-guid")]
+    [InlineData("11111111-1111-1111-1111-111111111111,")]
+    [InlineData("11111111-1111-1111-1111-111111111111,,22222222-2222-2222-2222-222222222222")]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    public async Task TagIdsQueryRejectsInvalidValues(string tagIds) {
+        var entityReadService = new CapturingEntityReadService();
+        using var factory = CreateFactory(entityReadService);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.GetAsync($"/api/entities?tagIds={Uri.EscapeDataString(tagIds)}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, entityReadService.ListCallCount);
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(IEntityReadService entityReadService) =>
         new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder => {
@@ -147,6 +199,7 @@ public sealed class EntityListEndpointTests {
         public EntityListSort? Sort { get; private set; }
         public EntitySortDirection? SortDirection { get; private set; }
         public bool? Engaged { get; private set; }
+        public IReadOnlyList<Guid>? TagIds { get; private set; }
         public int ShelfCallCount { get; private set; }
         public EntityListQuery? ShelfQuery { get; private set; }
 
@@ -175,7 +228,8 @@ public sealed class EntityListEndpointTests {
             bool? engaged = null,
             bool? orphaned = null,
             bool? wanted = null,
-            AcquisitionStatus? acquisitionStatus = null) {
+            AcquisitionStatus? acquisitionStatus = null,
+            IReadOnlyList<Guid>? tagIds = null) {
             Kind = kind;
             ListCallCount++;
             Wanted = wanted;
@@ -183,6 +237,7 @@ public sealed class EntityListEndpointTests {
             Sort = sort;
             SortDirection = sortDirection;
             Engaged = engaged;
+            TagIds = tagIds;
             return Task.FromResult(new EntityListResponse([], null, 0));
         }
 

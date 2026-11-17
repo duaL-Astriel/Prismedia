@@ -124,6 +124,8 @@ export interface EntityThumbnailCard {
   wantedStatus?: string | null;
   /** Latest linked acquisition state, retained after an entity leaves Wanted. */
   latestAcquisitionStatus?: string | null;
+  /** Tag display titles carried on list thumbnails for client-side fallback tag filtering. */
+  tagTitles?: string[];
   /**
    * Distinct acquisition states across the Entity's structural subtree. Availability filters use
    * membership here; older servers may omit it, in which case callers fall back to the singular status.
@@ -131,6 +133,8 @@ export interface EntityThumbnailCard {
   acquisitionStatuses?: string[] | null;
   routeContext?: EntityRouteContext;
   subtitle?: string;
+  /** Optional target entity id for artwork view transitions when href navigates to another entity. */
+  transitionEntityId?: string;
 }
 
 export interface EntityReferenceThumbnailOptions {
@@ -142,6 +146,8 @@ export interface EntityReferenceThumbnailOptions {
   meta?: EntityThumbnailMetaItem[];
   routeContext?: EntityRouteContext;
   subtitle?: string;
+  /** Optional target entity id for artwork view transitions when href navigates to another entity. */
+  transitionEntityId?: string;
 }
 
 /** Converts a named or numeric entity aspect ratio into a CSS aspect-ratio value. */

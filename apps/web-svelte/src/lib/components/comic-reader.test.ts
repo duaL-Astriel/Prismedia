@@ -1,10 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  COMIC_FIT_MODE,
+  COMIC_FIT_STORAGE_KEY,
   comicSpreadForIndex,
   comicPreloadIndexes,
   comicTapZone,
+  defaultComicFitMode,
   nextComicIndex,
   previousComicIndex,
+  readComicFitPreference,
+  resolveInitialComicFitMode,
+  writeComicFitPreference,
 } from "./comic-reader";
 
 describe("comic reader page math", () => {
@@ -58,5 +64,44 @@ describe("comic reader page math", () => {
     expect(
       comicPreloadIndexes(3, 9, { pageMode: "double", firstPageIsCover: true }),
     ).toEqual([1, 2, 5, 6]);
+  });
+});
+
+describe("comic reader fit preferences", () => {
+  const originalMatchMedia = window.matchMedia;
+
+  afterEach(() => {
+    window.localStorage.clear();
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it("defaults to fit-to-width on mobile viewports and fit-to-screen on desktop", () => {
+    expect(defaultComicFitMode(true)).toBe(COMIC_FIT_MODE.width);
+    expect(defaultComicFitMode(false)).toBe(COMIC_FIT_MODE.screen);
+
+    window.matchMedia = vi.fn(() => ({ matches: true }) as MediaQueryList);
+    expect(defaultComicFitMode()).toBe(COMIC_FIT_MODE.width);
+
+    window.matchMedia = vi.fn(() => ({ matches: false }) as MediaQueryList);
+    expect(defaultComicFitMode()).toBe(COMIC_FIT_MODE.screen);
+  });
+
+  it("persists valid fit mode preferences and ignores unknown values", () => {
+    expect(readComicFitPreference()).toBeNull();
+
+    writeComicFitPreference(COMIC_FIT_MODE.height);
+    expect(readComicFitPreference()).toBe(COMIC_FIT_MODE.height);
+
+    window.localStorage.setItem(COMIC_FIT_STORAGE_KEY, "invalid-mode");
+    expect(readComicFitPreference()).toBeNull();
+  });
+
+  it("resolves explicit overrides before saved preference and viewport default", () => {
+    window.matchMedia = vi.fn(() => ({ matches: true }) as MediaQueryList);
+    expect(resolveInitialComicFitMode()).toBe(COMIC_FIT_MODE.width);
+
+    writeComicFitPreference(COMIC_FIT_MODE.height);
+    expect(resolveInitialComicFitMode()).toBe(COMIC_FIT_MODE.height);
+    expect(resolveInitialComicFitMode(COMIC_FIT_MODE.screen)).toBe(COMIC_FIT_MODE.screen);
   });
 });
