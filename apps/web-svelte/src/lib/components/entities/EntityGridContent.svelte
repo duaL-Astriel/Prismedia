@@ -17,6 +17,7 @@
     hoverPreviewSuppressed: () => boolean;
     loading: boolean;
     mediaWall: boolean;
+    canActivateCard?: (card: EntityThumbnailCard) => boolean;
     onCardActivate?: (card: EntityThumbnailCard, visibleCards: EntityThumbnailCard[]) => void;
     onCardSelectedChange: (id: string, selected: boolean) => void;
     /** Present only when the current search or filters can be cleared. */
@@ -39,6 +40,7 @@
     hoverPreviewSuppressed,
     loading,
     mediaWall,
+    canActivateCard,
     onCardActivate,
     onCardSelectedChange,
     onResetFilters,
@@ -62,7 +64,7 @@
     <PrismediaLoadingMark label="Loading entities" showLabel />
   </div>
 {:else if hasVisibleCards && viewMode === "feed" && FeedComponent}
-  <FeedComponent {cards} onActivate={onCardActivate} {mediaWall} />
+  <FeedComponent {cards} canActivate={canActivateCard} onActivate={onCardActivate} {mediaWall} />
 {:else if hasVisibleCards}
   <div
     class="cards"
@@ -71,6 +73,7 @@
     aria-label="Entities"
   >
     {#each cards as card (card.entity.id)}
+      {@const activatable = Boolean(onCardActivate && (!canActivateCard || canActivateCard(card)))}
       <EntityThumbnail
         artworkReactive={false}
         {card}
@@ -78,9 +81,9 @@
         imageFetchPriority="auto"
         imageLoading="lazy"
         layout={viewMode === "feed" ? "grid" : viewMode}
-        linkable={cardLinks && !onCardActivate}
+        linkable={cardLinks && !activatable}
         mediaOnly={mediaWall}
-        onActivate={onCardActivate && !selectMode ? (activatedCard) => onCardActivate(activatedCard, cards) : undefined}
+        onActivate={activatable && !selectMode ? (activatedCard) => onCardActivate?.(activatedCard, cards) : undefined}
         {hoverPreviewSuppressed}
         {selectable}
         {selectMode}

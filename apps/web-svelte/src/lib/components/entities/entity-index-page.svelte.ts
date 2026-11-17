@@ -133,7 +133,12 @@ export class EntityIndexPageState {
   serverQuery = $state.raw<EntityGridServerQuery>({});
 
   cards: EntityThumbnailCard[] = $derived.by(() =>
-    this.items.map((item) => entityCardToThumbnailCard(item, this.hrefFor(item))),
+    this.items.map((item) => {
+      const href = this.hrefFor(item);
+      const card = entityCardToThumbnailCard(item, href);
+      const transitionEntityId = this.#transitionEntityIdFor(item, href);
+      return transitionEntityId ? { ...card, transitionEntityId } : card;
+    }),
   );
 
   readonly #options: EntityIndexPageStateOptions;
@@ -270,6 +275,32 @@ export class EntityIndexPageState {
 
   hrefFor(item: EntityCard): string | undefined {
     return this.#options.resolveHref?.(item) ?? this.#defaultHref(item);
+  }
+
+  #transitionEntityIdFor(item: EntityCard, href: string | undefined): string | undefined {
+    if (!href) return undefined;
+
+    if (
+      item.kind === ENTITY_KIND.comicSeries &&
+      item.singleReleaseEntityId &&
+      href === resolveEntityHref(ENTITY_KIND.comicInstallment, item.singleReleaseEntityId, {
+        kind: ENTITY_KIND.comicSeries,
+        id: item.id,
+      })
+    ) {
+      return item.singleReleaseEntityId;
+    }
+
+    if (
+      item.kind === ENTITY_KIND.video &&
+      item.parentKind === ENTITY_KIND.movie &&
+      item.parentEntityId &&
+      href === resolveEntityHref(ENTITY_KIND.movie, item.parentEntityId)
+    ) {
+      return item.parentEntityId;
+    }
+
+    return undefined;
   }
 
   setPageSize(pageSize: number) {

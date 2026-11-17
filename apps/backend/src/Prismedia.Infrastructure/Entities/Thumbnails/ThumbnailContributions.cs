@@ -13,6 +13,7 @@ namespace Prismedia.Infrastructure.Entities.Thumbnails;
 public sealed class ThumbnailContributions {
     private readonly Dictionary<Guid, List<EntityThumbnailMeta>> _extraMeta = [];
     private readonly Dictionary<Guid, IReadOnlyList<EntityKindCount>> _referenceCounts = [];
+    private readonly Dictionary<Guid, Guid> _singleReleaseEntityIds = [];
 
     /// <summary>Creates an accumulator over the rows being projected for the current page.</summary>
     /// <param name="rows">The entity rows the page is projecting into thumbnails.</param>
@@ -21,14 +22,25 @@ public sealed class ThumbnailContributions {
     /// library and NSFW predicates once before exposing this query so contributors cannot drift from
     /// the page's access rules.
     /// </param>
+    /// <param name="readsPersistedRollups">
+    /// True when persisted descendant-count rollups are available for the active database provider.
+    /// </param>
+    /// <param name="hideNsfw">Whether the viewer hides NSFW items.</param>
+    /// <param name="hiddenLibraryRootIds">Library roots hidden from the viewer.</param>
+    /// <param name="visibleCatalogEntities">
+    /// Caller-visible catalog entities including wanted placeholders, used when contributors must
+    /// detect whether a container also tracks wanted items. Defaults to <paramref name="visibleEntities"/>.
+    /// </param>
     public ThumbnailContributions(
         IReadOnlyList<EntityRow> rows,
         IQueryable<EntityRow> visibleEntities,
         bool readsPersistedRollups = false,
         bool hideNsfw = false,
-        Guid[]? hiddenLibraryRootIds = null) {
+        Guid[]? hiddenLibraryRootIds = null,
+        IQueryable<EntityRow>? visibleCatalogEntities = null) {
         Rows = rows;
         VisibleEntities = visibleEntities;
+        VisibleCatalogEntities = visibleCatalogEntities ?? visibleEntities;
         ReadsPersistedRollups = readsPersistedRollups;
         HideNsfw = hideNsfw;
         HiddenLibraryRootIds = hiddenLibraryRootIds ?? [];
@@ -44,6 +56,12 @@ public sealed class ThumbnailContributions {
     /// filtered by <see cref="HiddenLibraryRootIds"/> and <see cref="HideNsfw"/> instead.
     /// </summary>
     public IQueryable<EntityRow> VisibleEntities { get; }
+
+    /// <summary>
+    /// Query root for caller-visible entities including wanted placeholders. Contributors use this
+    /// when wanted descendants change whether a container is single-release or multi-release.
+    /// </summary>
+    public IQueryable<EntityRow> VisibleCatalogEntities { get; }
 
     /// <summary>
     /// True when the trigger-maintained rollup projections are available (PostgreSQL) and
@@ -87,6 +105,12 @@ public sealed class ThumbnailContributions {
     public void SetReferenceCounts(Guid entityId, IReadOnlyList<EntityKindCount> counts) =>
         _referenceCounts[entityId] = counts;
 
+    /// <summary>Sets the sole direct-navigation release identifier for a container thumbnail.</summary>
+    /// <param name="entityId">Container entity the release belongs to.</param>
+    /// <param name="releaseEntityId">Single release entity identifier.</param>
+    public void SetSingleReleaseEntityId(Guid entityId, Guid releaseEntityId) =>
+        _singleReleaseEntityIds[entityId] = releaseEntityId;
+
     /// <summary>Extra meta chips contributed for an entity, or an empty list when none.</summary>
     public IReadOnlyList<EntityThumbnailMeta> ExtraMetaFor(Guid entityId) =>
         _extraMeta.TryGetValue(entityId, out var list) ? list : [];
@@ -94,4 +118,8 @@ public sealed class ThumbnailContributions {
     /// <summary>Reference counts contributed for an entity, or <c>null</c> when none.</summary>
     public IReadOnlyList<EntityKindCount>? ReferenceCountsFor(Guid entityId) =>
         _referenceCounts.GetValueOrDefault(entityId);
+
+    /// <summary>Single release identifier contributed for an entity, or <c>null</c> when none.</summary>
+    public Guid? SingleReleaseEntityIdFor(Guid entityId) =>
+        _singleReleaseEntityIds.TryGetValue(entityId, out var releaseEntityId) ? releaseEntityId : null;
 }

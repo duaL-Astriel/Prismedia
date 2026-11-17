@@ -28,6 +28,7 @@ import {
   ENTITY_KIND,
   isTaxonomyEntityKind,
   labelForEntityKind,
+  type RelationshipCode,
 } from "./entity-codes";
 import {
   aspectRatioForKind,
@@ -43,6 +44,12 @@ import {
   PERSON_INCLUDE_ALL_ROLES_FILTER_DEF,
   personRoleFilterDefinitionFromId,
 } from "./entity-grid-person-filters";
+import {
+  cardMatchesTagFilter,
+  isTagFilterId,
+  tagFilterOption,
+  tagIdFromFilterId,
+} from "./entity-grid-tag-filters";
 import type { EntityGridSort, EntityGridViewMode } from "./entity-grid-display";
 import {
   sharedSourceEpisodeDisplayTitle,
@@ -57,6 +64,13 @@ export {
   PERSON_INCLUDE_ALL_ROLES_FILTER_DEF,
   PERSON_ROLE_FILTER_DEFS,
 } from "./entity-grid-person-filters";
+export {
+  isTagFilterId,
+  tagFilterId,
+  tagFilterLabel,
+  tagFilterOption,
+  tagIdFromFilterId,
+} from "./entity-grid-tag-filters";
 
 /**
  * Sentinel kind used when an entity grid is showing every returned entity kind
@@ -88,6 +102,7 @@ export type EntityGridServerQuery = Pick<
   | "acquisitionStatus"
   | "engaged"
   | "orphaned"
+  | "tagIds"
 >;
 
 export interface EntityGridKindTab {
@@ -100,7 +115,7 @@ export interface EntityGridFilterOption {
   id: string;
   count: number;
   label: string;
-  capabilityKind: EntityCapabilityKind;
+  capabilityKind: EntityCapabilityKind | RelationshipCode;
   value?: string;
 }
 
@@ -537,6 +552,9 @@ export function entityCardToThumbnailCard(
     wantedStatus: isFullEntityCard(entity) ? null : entity.wantedStatus ?? null,
     latestAcquisitionStatus,
     acquisitionStatuses,
+    tagTitles: isFullEntityCard(entity)
+      ? undefined
+      : (entity.genres ?? []).filter((tag) => tag.trim().length > 0),
   };
 }
 
@@ -607,6 +625,7 @@ export function isServerResolvedFilterId(id: string): boolean {
     id.startsWith("rating:min:") ||
     id.startsWith("rating:max:") ||
     id.startsWith("status:") ||
+    isTagFilterId(id) ||
     bookFilterDefinitionFromId(id) !== undefined ||
     personRoleFilterDefinitionFromId(id) !== undefined
   );
@@ -623,6 +642,7 @@ export function buildServerQueryFromFilters(filterIds: string[]): EntityGridServ
   const bookFormats: string[] = [];
   const personRoles: string[] = [];
   let includeAllPersonRoles = false;
+  const tagIds: string[] = [];
   for (const id of filterIds) {
     if (id === "flags:favorite") {
       server.favorite = true;
@@ -663,6 +683,11 @@ export function buildServerQueryFromFilters(filterIds: string[]): EntityGridServ
     } else if (STATUS_VALUE_BY_ID.has(id)) {
       server.status = STATUS_VALUE_BY_ID.get(id);
     } else {
+      const tagId = tagIdFromFilterId(id);
+      if (tagId) {
+        if (!tagIds.includes(tagId)) tagIds.push(tagId);
+        continue;
+      }
       const bookFilter = bookFilterDefinitionFromId(id);
       if (bookFilter?.family === "type") bookTypes.push(bookFilter.code);
       else if (bookFilter?.family === "format") bookFormats.push(bookFilter.code);
@@ -686,6 +711,7 @@ export function buildServerQueryFromFilters(filterIds: string[]): EntityGridServ
   } else if (includeAllPersonRoles) {
     server.excludeCreditRole = "";
   }
+  if (tagIds.length > 0) server.tagIds = tagIds.join(",");
   return server;
 }
 
@@ -984,6 +1010,10 @@ export function entityGridFilterFromId(
   if (personRoleFilter) {
     return { id, count: 0, label: personRoleFilter.label, capabilityKind: CAPABILITY_KIND.classification, value: personRoleFilter.code };
   }
+  const tagId = tagIdFromFilterId(id);
+  if (tagId) {
+    return tagFilterOption(tagId);
+  }
   return undefined;
 }
 
@@ -1128,6 +1158,9 @@ export function applyEntityGridState(
       if (filter.id === `${AVAILABILITY_PREFIX}wanted`) return isWanted(card.entity.capabilities);
       if (filter.id.startsWith(AVAILABILITY_PREFIX)) {
         return acquisitionStatusesForCard(card).includes(filter.value ?? "");
+      }
+      if (isTagFilterId(filter.id)) {
+        return cardMatchesTagFilter(card, filter);
       }
       return entityMatchesFilter(card.entity.capabilities, filter);
     });

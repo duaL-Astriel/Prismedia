@@ -161,6 +161,8 @@ describe("EntityGrid pagination", () => {
       expect(renderedCount).toBe(100);
       expect(container.querySelectorAll(".entity-thumbnail").length).toBe(100);
       expect(screen.getByText("Page 1 / 45")).toBeInTheDocument();
+      // A fully loaded local source reports its exact total, not an open-ended "4500+".
+      expect(container.querySelector(".readout-total")).toHaveTextContent(/^4500$/);
     });
   });
 
@@ -407,6 +409,30 @@ describe("EntityGrid pagination", () => {
     expect(container.querySelector(".entity-grid")?.classList.contains("is-static")).toBe(true);
     expect(container.querySelector(".pagination-shell")).toBeNull();
     expect(screen.queryByText("Page 1 / 1")).not.toBeInTheDocument();
+  });
+
+  it("anchors the filter drawer inside the sticky search toolbar instead of above the grid viewport", async () => {
+    vi.stubGlobal("matchMedia", createMatchMedia(false));
+    const cards = Array.from({ length: 6 }, (_, index) => card(index));
+    const { container } = render(EntityGrid, {
+      props: {
+        cards,
+        prefsKey: undefined,
+      },
+    });
+
+    const filtersButton = screen.getByRole("button", { name: "Filters" });
+    await fireEvent.click(filtersButton);
+
+    const filterRegion = screen.getByRole("region", { name: "Filter options" });
+    const toolbarShell = container.querySelector(".toolbar-shell");
+    const gridViewport = container.querySelector(".grid-viewport");
+    expect(toolbarShell).toContainElement(filterRegion);
+    expect(gridViewport).not.toContainElement(filterRegion);
+    expect(filtersButton).toHaveAttribute("aria-controls", filterRegion.id);
+
+    await fireEvent.click(filtersButton);
+    expect(screen.queryByRole("region", { name: "Filter options" })).not.toBeInTheDocument();
   });
 });
 

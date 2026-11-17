@@ -2,7 +2,7 @@
   import { ArrowDownWideNarrow, ArrowUpNarrowWide, Shuffle } from "@lucide/svelte";
   import { Button, SearchInput, Select } from "@prismedia/ui-svelte";
   import { ENTITY_SORT_DIRECTION } from "$lib/api/generated/codes";
-  import { isTaxonomyEntityKind } from "$lib/entities/entity-codes";
+  import { entityGridSortOptionsForKind } from "$lib/entities/entity-grid-display";
   import { ENTITY_GRID_SORT, type EntityGridSort, type EntityGridSortDir } from "$lib/entities/entity-grid";
 
   interface Props {
@@ -17,16 +17,7 @@
   }
 
   let { entityKind, onQueryChange, onReshuffle, onSortByChange, onSortDirChange, query, sortBy, sortDir }: Props = $props();
-  const options = $derived<{ value: EntityGridSort; label: string }[]>([
-    { value: ENTITY_GRID_SORT.title, label: "Title" },
-    { value: ENTITY_GRID_SORT.added, label: "Date added" },
-    ...(entityKind != null && isTaxonomyEntityKind(entityKind)
-      ? [{ value: ENTITY_GRID_SORT.references, label: "References" }] : []),
-    { value: ENTITY_GRID_SORT.rating, label: "Rating" },
-    { value: ENTITY_GRID_SORT.random, label: "Random" },
-    { value: ENTITY_GRID_SORT.kind, label: "Kind" },
-    { value: ENTITY_GRID_SORT.position, label: "Position" },
-  ]);
+  const options = $derived(entityGridSortOptionsForKind(entityKind));
   const ascending = $derived(sortDir === ENTITY_SORT_DIRECTION.ascending);
 </script>
 

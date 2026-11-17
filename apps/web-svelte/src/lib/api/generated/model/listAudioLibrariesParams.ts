@@ -44,4 +44,5 @@ wanted?: boolean;
 acquisitionStatus?: string;
 creditRole?: string;
 excludeCreditRole?: string;
+tagIds?: string;
 };

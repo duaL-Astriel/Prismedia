@@ -107,6 +107,9 @@ public sealed record EntityListQuery {
     /// at least one non-excluded role remain visible).
     /// </summary>
     public string? ExcludeCreditRole { get; init; }
+
+    /// <summary>Optional tag entity IDs that every returned entity must link to (all tags must match).</summary>
+    public IReadOnlyList<Guid>? TagIds { get; init; }
 }
 
 /// <summary>

@@ -15,6 +15,7 @@
     lightboxEntityFromCard,
     type UniversalLightboxEntity,
   } from "$lib/components/universal-lightbox-media";
+  import { selectLightboxCardsToHydrate } from "./entity-grid-lightbox";
   import EntityGrid from "./EntityGrid.svelte";
   import NameInputDialog from "./NameInputDialog.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -203,11 +204,19 @@
   });
 
   $effect(() => {
-    if (!enableLightbox || lightboxCards.length === 0) return;
-    const currentCard = lightboxCards[lightboxIndex];
-    if (!currentCard || (currentCard.entity.kind !== ENTITY_KIND.image && currentCard.entity.kind !== ENTITY_KIND.video)) return;
-    if (hydratedLightboxEntities[currentCard.entity.id]) return;
-    void hydrateLightboxEntity(currentCard.entity.id);
+    if (!enableLightbox) return;
+    const cards = lightboxCards;
+    const index = lightboxIndex;
+    untrack(() => {
+      for (const card of selectLightboxCardsToHydrate(
+        cards,
+        index,
+        hydratedLightboxEntities,
+        lightboxHydrationInFlight,
+      )) {
+        void hydrateLightboxEntity(card);
+      }
+    });
   });
 
   function handleRequestChange(request: EntityGridRequest) {
@@ -291,19 +300,22 @@
     };
   }
 
-  async function hydrateLightboxEntity(entityId: string) {
+  async function hydrateLightboxEntity(card: EntityThumbnailCard) {
+    const entityId = card.entity.id;
+    const cardKind = card.entity.kind;
     if (lightboxHydrationInFlight.includes(entityId)) return;
-    const currentCard = lightboxCards[lightboxIndex];
-    const kind = currentCard?.entity.kind;
-    if (kind !== ENTITY_KIND.image && kind !== ENTITY_KIND.video) return;
+    if (cardKind !== ENTITY_KIND.image && cardKind !== ENTITY_KIND.video) return;
 
     lightboxHydrationInFlight = [...lightboxHydrationInFlight, entityId];
     try {
       const entity = lightboxEntityFromEntity(await fetchEntity(entityId));
+      if (!lightboxCards.some((candidate) => candidate.entity.id === entityId)) return;
       hydratedLightboxEntities = {
         ...hydratedLightboxEntities,
         [entityId]: entity,
       };
+    } catch {
+      // Keep the card-derived entity payload so the lightbox stays usable offline or on transient errors.
     } finally {
       lightboxHydrationInFlight = lightboxHydrationInFlight.filter((id) => id !== entityId);
     }

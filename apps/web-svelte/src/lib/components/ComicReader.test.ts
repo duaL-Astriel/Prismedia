@@ -2,6 +2,7 @@ import { fireEvent, render } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ComicReader from "./ComicReader.svelte";
+import { COMIC_FIT_MODE, COMIC_FIT_STORAGE_KEY } from "./comic-reader";
 import type { ImageListItemDto } from "$lib/entities/media-view-models";
 import { PAGE_READING_DIRECTION } from "$lib/api/generated/codes";
 
@@ -41,12 +42,17 @@ function readerRoot(container: HTMLElement): HTMLElement {
 }
 
 describe("ComicReader", () => {
+  const originalMatchMedia = window.matchMedia;
+
   beforeEach(() => {
     vi.useFakeTimers();
+    window.localStorage.clear();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    window.localStorage.clear();
+    window.matchMedia = originalMatchMedia;
     document.head
       .querySelectorAll('link[rel="preload"][as="image"]')
       .forEach((link) => link.remove());
@@ -412,6 +418,332 @@ describe("ComicReader", () => {
     await fireEvent.scroll(stage);
 
     expect(onIndexChange).toHaveBeenCalledWith(1);
+  });
+
+  it("tracks horizontal paged wipe gestures with adjacent preview and advances page on release", async () => {
+    const onIndexChange = vi.fn();
+    const { container } = render(ComicReader, {
+      props: {
+        images,
+        initialIndex: 0,
+        title: "Comic",
+        onClose: vi.fn(),
+        onIndexChange: onIndexChange as never,
+      },
+    });
+
+    const root = readerRoot(container);
+    const stage = root.querySelector(".reader-stage-paged") as HTMLElement;
+    vi.spyOn(stage, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 800,
+    } as DOMRect);
+
+    await fireEvent(stage, readerPointerEvent("pointerdown", 300, 400, "touch", 11));
+    await fireEvent(stage, readerPointerEvent("pointermove", 190, 404, "touch", 11));
+    await tick();
+
+    const activePane = root.querySelector("[data-comic-wipe-active]") as HTMLElement;
+    const adjacentPane = root.querySelector("[data-comic-wipe-adjacent]") as HTMLElement;
+    expect(activePane.style.transform).toBe("translate3d(-110px, 0px, 0)");
+    expect(adjacentPane).toBeInTheDocument();
+    // Stride = 400 + 16 = 416; adjacent sits at 416 - 110 = 306px
+    expect(adjacentPane.style.transform).toBe("translate3d(306px, 0, 0)");
+
+    await fireEvent(stage, readerPointerEvent("pointerup", 190, 404, "touch", 11));
+    await tick();
+
+    expect(onIndexChange).toHaveBeenCalledWith(1);
+    expect(root.querySelector("[data-comic-wipe-outgoing]")).toBeInTheDocument();
+  });
+
+  it("respects right-to-left direction and boundary resistance during comic wipes", async () => {
+    const onIndexChange = vi.fn();
+    const { container } = render(ComicReader, {
+      props: {
+        images,
+        initialIndex: 0,
+        readingDirection: PAGE_READING_DIRECTION.rightToLeft,
+        title: "Manga",
+        onClose: vi.fn(),
+        onIndexChange: onIndexChange as never,
+      },
+    });
+
+    const root = readerRoot(container);
+    const stage = root.querySelector(".reader-stage-paged") as HTMLElement;
+    vi.spyOn(stage, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 800,
+    } as DOMRect);
+
+    // At page 0 in RTL, dragging left goes backward (no previous page) -> rubber-band
+    await fireEvent(stage, readerPointerEvent("pointerdown", 250, 400, "touch", 12));
+    await fireEvent(stage, readerPointerEvent("pointermove", 150, 400, "touch", 12));
+    await tick();
+    expect((root.querySelector("[data-comic-wipe-active]") as HTMLElement).style.transform).toBe(
+      "translate3d(-28px, 0px, 0)",
+    );
+    await fireEvent(stage, readerPointerEvent("pointerup", 150, 400, "touch", 12));
+    expect(onIndexChange).not.toHaveBeenCalled();
+
+    // Dragging right in RTL advances to page 1
+    await fireEvent(stage, readerPointerEvent("pointerdown", 100, 400, "touch", 13));
+    await fireEvent(stage, readerPointerEvent("pointermove", 220, 400, "touch", 13));
+    await tick();
+    expect((root.querySelector("[data-comic-wipe-active]") as HTMLElement).style.transform).toBe(
+      "translate3d(120px, 0px, 0)",
+    );
+    await fireEvent(stage, readerPointerEvent("pointerup", 220, 400, "touch", 13));
+    expect(onIndexChange).toHaveBeenCalledWith(1);
+  });
+
+  it("supports downward dismiss wipe and ignores cancelled wipes in comic reader", async () => {
+    const onClose = vi.fn();
+    const { container } = render(ComicReader, {
+      props: {
+        images,
+        initialIndex: 0,
+        title: "Comic",
+        onClose,
+      },
+    });
+
+    const root = readerRoot(container);
+    const stage = root.querySelector(".reader-stage-paged") as HTMLElement;
+    vi.spyOn(stage, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 800,
+    } as DOMRect);
+
+    // Cancelled vertical drag must not dismiss
+    await fireEvent(stage, readerPointerEvent("pointerdown", 200, 200, "touch", 14));
+    await fireEvent(stage, readerPointerEvent("pointermove", 200, 320, "touch", 14));
+    await tick();
+    expect((root.querySelector("[data-comic-wipe-active]") as HTMLElement).style.transform).toContain(
+      "translate3d(0px, 120px, 0) scale(",
+    );
+    await fireEvent(stage, readerPointerEvent("pointercancel", 200, 320, "touch", 14));
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Committed downward drag dismisses
+    await fireEvent(stage, readerPointerEvent("pointerdown", 200, 200, "touch", 15));
+    await fireEvent(stage, readerPointerEvent("pointermove", 200, 320, "touch", 15));
+    await fireEvent(stage, readerPointerEvent("pointerup", 200, 320, "touch", 15));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("commits a forward wipe on the chapter-end page by calling onNextChapter without self-sliding", async () => {
+    let resolveNext!: () => void;
+    const onNextChapter = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveNext = resolve;
+        }),
+    );
+
+    const { container } = render(ComicReader, {
+      props: {
+        images,
+        initialIndex: images.length,
+        title: "Comic",
+        nextChapterLabel: "Chapter Two",
+        onClose: vi.fn(),
+        onNextChapter,
+      },
+    });
+
+    const root = readerRoot(container);
+    const stage = root.querySelector(".reader-stage-paged") as HTMLElement;
+    vi.spyOn(stage, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 800,
+    } as DOMRect);
+
+    await fireEvent(stage, readerPointerEvent("pointerdown", 300, 400, "touch", 16));
+    await fireEvent(stage, readerPointerEvent("pointermove", 180, 400, "touch", 16));
+    await fireEvent(stage, readerPointerEvent("pointerup", 180, 400, "touch", 16));
+    await tick();
+
+    expect(onNextChapter).toHaveBeenCalledTimes(1);
+    expect(root.querySelector("[data-comic-wipe-outgoing]")).toBeNull();
+    expect((root.querySelector("[data-comic-wipe-active]") as HTMLElement).style.transform).toBe("");
+
+    resolveNext();
+    await Promise.resolve();
+    await tick();
+
+    expect(root.querySelector('img[alt="Page 1"]')).toBeInTheDocument();
+  });
+
+  it("defaults to fit-to-screen on desktop and fit-to-width on mobile viewports", () => {
+    const { container, getByLabelText, unmount } = render(ComicReader, {
+      props: {
+        images,
+        initialIndex: 0,
+        title: "Comic",
+        onClose: vi.fn(),
+      },
+    });
+
+    expect(getByLabelText("Fit to screen")).toHaveAttribute("aria-pressed", "true");
+    expect(readerRoot(container).querySelector(".reader-stage")).toHaveAttribute(
+      "data-comic-fit-mode",
+      COMIC_FIT_MODE.screen,
+    );
+    unmount();
+
+    window.matchMedia = vi.fn(() => ({ matches: true }) as MediaQueryList);
+    const mobileRender = render(ComicReader, {
+      props: {
+        images,
+        initialIndex: 0,
+        title: "Comic",
+        onClose: vi.fn(),
+      },
+    });
+
+    expect(mobileRender.getByLabelText("Fit to width")).toHaveAttribute("aria-pressed", "true");
+    expect(readerRoot(mobileRender.container).querySelector(".reader-stage")).toHaveAttribute(
+      "data-comic-fit-mode",
+      COMIC_FIT_MODE.width,
+    );
+  });
+
+  it("switches between fit-to-screen, fit-to-width, and fit-to-height and persists the choice", async () => {
+    const onFitModeChange = vi.fn();
+    const { container, getByLabelText } = render(ComicReader, {
+      props: {
+        images,
+        initialIndex: 0,
+        title: "Comic",
+        onClose: vi.fn(),
+        onFitModeChange,
+      },
+    });
+
+    const root = readerRoot(container);
+    const stage = root.querySelector(".reader-stage") as HTMLElement;
+
+    await fireEvent.click(getByLabelText("Fit to width"));
+    expect(getByLabelText("Fit to width")).toHaveAttribute("aria-pressed", "true");
+    expect(stage).toHaveAttribute("data-comic-fit-mode", COMIC_FIT_MODE.width);
+    expect(stage.className).toContain("overflow-y-auto");
+    expect(root.querySelector(".reader-stage-paged img")?.className).toContain("w-full");
+    expect(window.localStorage.getItem(COMIC_FIT_STORAGE_KEY)).toBe(COMIC_FIT_MODE.width);
+    expect(onFitModeChange).toHaveBeenCalledWith(COMIC_FIT_MODE.width);
+
+    await fireEvent.click(getByLabelText("Fit to height"));
+    expect(getByLabelText("Fit to height")).toHaveAttribute("aria-pressed", "true");
+    expect(stage).toHaveAttribute("data-comic-fit-mode", COMIC_FIT_MODE.height);
+    expect(stage.className).toContain("overflow-x-auto");
+    expect(root.querySelector(".reader-stage-paged img")?.className).toContain("h-full");
+    expect(window.localStorage.getItem(COMIC_FIT_STORAGE_KEY)).toBe(COMIC_FIT_MODE.height);
+    expect(onFitModeChange).toHaveBeenCalledWith(COMIC_FIT_MODE.height);
+
+    await fireEvent.click(getByLabelText("Fit to screen"));
+    expect(getByLabelText("Fit to screen")).toHaveAttribute("aria-pressed", "true");
+    expect(stage).toHaveAttribute("data-comic-fit-mode", COMIC_FIT_MODE.screen);
+    expect(stage.className).toContain("overflow-hidden");
+    expect(root.querySelector(".reader-stage-paged img")?.className).toContain("object-contain");
+  });
+
+  it("applies fit mode layout in webtoon mode as well", async () => {
+    const { container, getByLabelText } = render(ComicReader, {
+      props: {
+        images,
+        initialIndex: 0,
+        initialMode: "webtoon",
+        title: "Comic",
+        onClose: vi.fn(),
+      },
+    });
+
+    const root = readerRoot(container);
+    const stage = root.querySelector(".reader-stage") as HTMLElement;
+    expect(stage.firstElementChild?.className).toContain("max-w-4xl");
+
+    await fireEvent.click(getByLabelText("Fit to width"));
+    expect(stage.firstElementChild?.className).not.toContain("max-w-4xl");
+
+    await fireEvent.click(getByLabelText("Fit to height"));
+    expect(stage.className).toContain("overflow-x-auto");
+    expect(root.querySelector(".reader-stage img")?.className).toContain("h-dvh");
+  });
+
+  it("resets paged scroll position when turning pages in fit-to-width mode", async () => {
+    const { container, getByLabelText } = render(ComicReader, {
+      props: {
+        images,
+        initialIndex: 0,
+        initialFitMode: COMIC_FIT_MODE.width,
+        title: "Comic",
+        onClose: vi.fn(),
+      },
+    });
+
+    const stage = readerRoot(container).querySelector(".reader-stage") as HTMLElement;
+    stage.scrollTop = 320;
+
+    await fireEvent.click(getByLabelText("Next page"));
+    await tick();
+
+    expect(stage.scrollTop).toBe(0);
+  });
+
+  it("does not dismiss on downward swipe while fit-to-width can scroll vertically", async () => {
+    const onClose = vi.fn();
+    const { container } = render(ComicReader, {
+      props: {
+        images,
+        initialIndex: 0,
+        initialFitMode: COMIC_FIT_MODE.width,
+        title: "Comic",
+        onClose,
+      },
+    });
+
+    const stage = readerRoot(container).querySelector(".reader-stage") as HTMLElement;
+    Object.defineProperty(stage, "scrollHeight", { value: 1_800, configurable: true });
+    Object.defineProperty(stage, "clientHeight", { value: 700, configurable: true });
+
+    await fireEvent(stage, readerPointerEvent("pointerdown", 150, 100, "touch", 4));
+    await fireEvent(stage, readerPointerEvent("pointermove", 150, 220, "touch", 4));
+    await fireEvent(stage, readerPointerEvent("pointerup", 150, 220, "touch", 4));
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("does not flip pages on horizontal drag while fit-to-height can scroll horizontally", async () => {
+    const onIndexChange = vi.fn();
+    const { container } = render(ComicReader, {
+      props: {
+        images,
+        initialIndex: 1,
+        initialFitMode: COMIC_FIT_MODE.height,
+        title: "Comic",
+        onClose: vi.fn(),
+        onIndexChange,
+      },
+    });
+
+    const stage = readerRoot(container).querySelector(".reader-stage") as HTMLElement;
+    Object.defineProperty(stage, "scrollWidth", { value: 1_400, configurable: true });
+    Object.defineProperty(stage, "clientWidth", { value: 400, configurable: true });
+
+    await fireEvent(stage, readerPointerEvent("pointerdown", 250, 200, "touch", 5));
+    await fireEvent(stage, readerPointerEvent("pointermove", 100, 200, "touch", 5));
+    await fireEvent(stage, readerPointerEvent("pointerup", 100, 200, "touch", 5));
+
+    expect(onIndexChange).not.toHaveBeenCalled();
   });
 });
 
