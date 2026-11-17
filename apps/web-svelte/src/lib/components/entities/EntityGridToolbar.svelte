@@ -143,7 +143,8 @@
     () => drawerOpen || mobilePinnedOpen,
   );
 
-  const filterDrawerId = `${$props.id()}-filters`;
+  const toolbarId = $props.id();
+  const filterDrawerId = `${toolbarId}-filters`;
 
   onMount(() => {
     const cleanups: (() => void)[] = [];
