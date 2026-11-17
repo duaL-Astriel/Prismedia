@@ -457,6 +457,250 @@ describe("UniversalLightbox", () => {
     expect(mediaFrame.style.transform).toContain("scale(2.45)");
   });
 
+  it("tracks touch horizontal wipe drag on images with adjacent preview and commits navigation", async () => {
+    const onIndexChange = vi.fn();
+    render(UniversalLightboxHarness, {
+      props: { entities: [still, second], initialIndex: 0, onClose: vi.fn(), onIndexChange },
+    });
+
+    const stage = document.querySelector(".stage") as HTMLDivElement;
+    stage.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 800,
+      right: 400,
+      bottom: 800,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    });
+
+    const img = document.querySelector("img.lightbox-image") as HTMLImageElement;
+    await fireEvent.load(img);
+    await tick();
+
+    const sendTouch = (type: string, clientX: number, clientY: number) => {
+      const ev = new PointerEvent(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, "pointerId", { configurable: true, value: 3 });
+      Object.defineProperty(ev, "clientX", { configurable: true, value: clientX });
+      Object.defineProperty(ev, "clientY", { configurable: true, value: clientY });
+      Object.defineProperty(ev, "pointerType", { configurable: true, value: "touch" });
+      stage.dispatchEvent(ev);
+    };
+
+    sendTouch("pointerdown", 300, 400);
+    sendTouch("pointermove", 180, 404);
+    await tick();
+
+    const activePane = document.querySelector("[data-lightbox-wipe-active]") as HTMLElement;
+    const adjacentPane = document.querySelector("[data-lightbox-wipe-adjacent]") as HTMLElement;
+    expect(activePane.style.transform).toBe("translate3d(-120px, 0px, 0)");
+    expect(adjacentPane).toBeInTheDocument();
+    // Stride = 400 + 16 = 416; adjacent sits at 416 - 120 = 296px
+    expect(adjacentPane.style.transform).toBe("translate3d(296px, 0, 0)");
+
+    sendTouch("pointerup", 180, 404);
+    await tick();
+
+    expect(onIndexChange).toHaveBeenLastCalledWith(1);
+    expect(document.querySelector("[data-lightbox-wipe-outgoing]")).toBeInTheDocument();
+  });
+
+  it("tracks horizontal and vertical dismiss wipe gestures on lightbox videos", async () => {
+    const onIndexChange = vi.fn();
+    const onClose = vi.fn();
+    render(UniversalLightboxHarness, {
+      props: { entities: [animatedWithPreview, still], initialIndex: 0, onClose, onIndexChange },
+    });
+
+    const stage = document.querySelector(".stage") as HTMLDivElement;
+    stage.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 800,
+      right: 400,
+      bottom: 800,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector("video.lightbox-native-video")).toBeInTheDocument();
+    });
+
+    const sendTouch = (type: string, clientX: number, clientY: number) => {
+      const ev = new PointerEvent(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, "pointerId", { configurable: true, value: 4 });
+      Object.defineProperty(ev, "clientX", { configurable: true, value: clientX });
+      Object.defineProperty(ev, "clientY", { configurable: true, value: clientY });
+      Object.defineProperty(ev, "pointerType", { configurable: true, value: "touch" });
+      stage.dispatchEvent(ev);
+    };
+
+    // Short horizontal drag snaps back without navigating
+    sendTouch("pointerdown", 200, 300);
+    sendTouch("pointermove", 170, 302);
+    await tick();
+    expect((document.querySelector("[data-lightbox-wipe-active]") as HTMLElement).style.transform).toBe(
+      "translate3d(-30px, 0px, 0)",
+    );
+    sendTouch("pointerup", 170, 302);
+    await tick();
+    expect(onIndexChange).toHaveBeenCalledTimes(1); // initial mount call only
+
+    // Downward drag scales down and dismisses on release
+    sendTouch("pointerdown", 200, 200);
+    sendTouch("pointermove", 202, 340);
+    await tick();
+    const activePane = document.querySelector("[data-lightbox-wipe-active]") as HTMLElement;
+    expect(activePane.style.transform).toContain("translate3d(0px, 140px, 0) scale(");
+    sendTouch("pointerup", 202, 340);
+    await tick();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies boundary resistance when wiping a single-item lightbox and snaps back on pointercancel", async () => {
+    const onClose = vi.fn();
+    render(UniversalLightboxHarness, {
+      props: { entities: [still], initialIndex: 0, onClose },
+    });
+
+    const stage = document.querySelector(".stage") as HTMLDivElement;
+    stage.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 800,
+      right: 400,
+      bottom: 800,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    });
+
+    const img = document.querySelector("img.lightbox-image") as HTMLImageElement;
+    await fireEvent.load(img);
+    await tick();
+
+    const sendTouch = (type: string, clientX: number, clientY: number) => {
+      const ev = new PointerEvent(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, "pointerId", { configurable: true, value: 5 });
+      Object.defineProperty(ev, "clientX", { configurable: true, value: clientX });
+      Object.defineProperty(ev, "clientY", { configurable: true, value: clientY });
+      Object.defineProperty(ev, "pointerType", { configurable: true, value: "touch" });
+      stage.dispatchEvent(ev);
+    };
+
+    sendTouch("pointerdown", 200, 300);
+    sendTouch("pointermove", 100, 300);
+    await tick();
+
+    // Rubber-banded (-100 * 0.28 = -28px) and no adjacent pane
+    const activePane = document.querySelector("[data-lightbox-wipe-active]") as HTMLElement;
+    expect(activePane.style.transform).toBe("translate3d(-28px, 0px, 0)");
+    expect(document.querySelector("[data-lightbox-wipe-adjacent]")).toBeNull();
+
+    sendTouch("pointercancel", 100, 300);
+    await tick();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("does not swallow a tap click after pointercancel on a video wipe", async () => {
+    render(UniversalLightboxHarness, {
+      props: { entities: [animatedWithPreview, still], initialIndex: 0, onClose: vi.fn() },
+    });
+
+    const stage = document.querySelector(".stage") as HTMLDivElement;
+    stage.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 800,
+      right: 400,
+      bottom: 800,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector("video.lightbox-native-video")).toBeInTheDocument();
+    });
+
+    const stageClick = vi.fn();
+    stage.addEventListener("click", stageClick);
+
+    const sendTouch = (type: string, clientX: number, clientY: number) => {
+      const ev = new PointerEvent(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, "pointerId", { configurable: true, value: 6 });
+      Object.defineProperty(ev, "clientX", { configurable: true, value: clientX });
+      Object.defineProperty(ev, "clientY", { configurable: true, value: clientY });
+      Object.defineProperty(ev, "pointerType", { configurable: true, value: "touch" });
+      stage.dispatchEvent(ev);
+    };
+
+    // Lock a video wipe (arms click suppression), then cancel the gesture
+    sendTouch("pointerdown", 200, 300);
+    sendTouch("pointermove", 150, 300);
+    sendTouch("pointercancel", 150, 300);
+    await tick();
+
+    // A subsequent tap click must not be swallowed
+    await fireEvent.click(stage);
+    expect(stageClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("resets an in-flight wipe when clicking a thumbnail in the thumb-strip", async () => {
+    const onIndexChange = vi.fn();
+    render(UniversalLightboxHarness, {
+      props: { entities: [still, second, animatedWithPreview], initialIndex: 0, onClose: vi.fn(), onIndexChange },
+    });
+
+    const stage = document.querySelector(".stage") as HTMLDivElement;
+    stage.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 800,
+      right: 400,
+      bottom: 800,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    });
+
+    const img = document.querySelector("img.lightbox-image") as HTMLImageElement;
+    await fireEvent.load(img);
+    await tick();
+
+    const sendTouch = (type: string, clientX: number, clientY: number) => {
+      const ev = new PointerEvent(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, "pointerId", { configurable: true, value: 7 });
+      Object.defineProperty(ev, "clientX", { configurable: true, value: clientX });
+      Object.defineProperty(ev, "clientY", { configurable: true, value: clientY });
+      Object.defineProperty(ev, "pointerType", { configurable: true, value: "touch" });
+      stage.dispatchEvent(ev);
+    };
+
+    sendTouch("pointerdown", 300, 400);
+    sendTouch("pointermove", 180, 404);
+    sendTouch("pointerup", 180, 404);
+    await tick();
+
+    expect(onIndexChange).toHaveBeenLastCalledWith(1);
+    expect(document.querySelector("[data-lightbox-wipe-outgoing]")).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Image 3" }));
+    await tick();
+
+    expect(onIndexChange).toHaveBeenLastCalledWith(2);
+    expect(document.querySelector("[data-lightbox-wipe-outgoing]")).toBeNull();
+    expect((document.querySelector("[data-lightbox-wipe-active]") as HTMLElement).style.transform).toBe("");
+  });
+
   it("keeps navigated images visible via their cover preview when hydration upgrades to the original source", async () => {
     const unhydratedSecond: UniversalLightboxEntity = {
       id: "image-2",

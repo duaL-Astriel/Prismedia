@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { Button, Checkbox } from "@prismedia/ui-svelte";
+  import { Button, Checkbox, prefersReducedMotion } from "@prismedia/ui-svelte";
   import {
     PAGE_READING_DIRECTION,
     READER_MODE,
     type PageReadingDirectionCode,
   } from "$lib/api/generated/codes";
   import { browser } from "$app/environment";
-  import { tick, untrack, type Snippet } from "svelte";
+  import { onDestroy, tick, untrack, type Snippet } from "svelte";
   import {
     BookOpen,
     Columns2,
@@ -21,7 +21,21 @@
   import { apiAssetUrl as toApiUrl, apiPath } from "$lib/api/orval-fetch";
   import type { ImageListItemDto } from "$lib/entities/media-view-models";
   import ReaderShell from "$lib/components/reader/ReaderShell.svelte";
+  import {
+    WIPE_SLOP_PX,
+    applyWipeResistance,
+    computeAdjacentPreviewOffset,
+    createWipeTransitionController,
+    formatWipeTransform,
+    formatWipeTransition,
+    idleWipeVisualState,
+    lockWipeAxis,
+    resolveWipeCommit,
+    type WipeAxis,
+    type WipeVisualState,
+  } from "$lib/gestures/wipe-gesture";
   import NsfwBlur from "./nsfw/NsfwBlur.svelte";
+  import ComicReaderSpread from "./ComicReaderSpread.svelte";
   import {
     COMIC_FIT_MODE,
     comicPreloadIndexes,
@@ -41,9 +55,16 @@
     pointerId: number;
     startX: number;
     startY: number;
+    startTime: number;
     startScrollTop: number;
     startScrollLeft: number;
     moved: boolean;
+    axis: WipeAxis;
+  }
+
+  interface SpreadWipeSnapshot {
+    isEndPage: boolean;
+    spreadImages: ImageListItemDto[];
   }
 
   interface Props {
@@ -156,6 +177,22 @@
   let nextChapterBusy = $state(false);
   let readerPointerGesture: ReaderPointerGesture | null = null;
   const warmedImages = new Map<string, HTMLImageElement>();
+  let wipeVisuals = $state<WipeVisualState>(idleWipeVisualState());
+  let outgoingSpread = $state<SpreadWipeSnapshot | null>(null);
+
+  const wipeController = createWipeTransitionController({
+    onUpdate: (next) => {
+      wipeVisuals = next;
+    },
+    onAnimationEnd: () => {
+      outgoingSpread = null;
+    },
+    isReducedMotion: prefersReducedMotion,
+  });
+
+  onDestroy(() => {
+    wipeController.reset();
+  });
 
   const rightToLeft = $derived(readingDirection === PAGE_READING_DIRECTION.rightToLeft);
   const readerOptions = $derived({
@@ -201,6 +238,63 @@
       .filter(Boolean),
   );
   const warmSources = $derived([...new Set([...visibleSources, ...preloadSources])]);
+  const reducedMotion = $derived(prefersReducedMotion());
+  const wipeActiveTransform = $derived(formatWipeTransform(wipeVisuals));
+  const wipeTransitionStyle = $derived(formatWipeTransition(wipeVisuals.phase, reducedMotion));
+  const isVerticalDismissWipe = $derived(wipeVisuals.axis === "vertical" && wipeVisuals.offsetY > 0);
+
+  function canGoForwardFromCurrent(): boolean {
+    if (showingChapterEndPage) return hasEndAction;
+    if (images.length <= 0) return false;
+    return !isLastReadableSpread() || hasEndAction;
+  }
+
+  function canGoBackwardFromCurrent(): boolean {
+    if (showingChapterEndPage) return images.length > 0;
+    return index > 0;
+  }
+
+  function resolvePreviewSpread(targetIndex: number): ImageListItemDto[] {
+    const targetSpread = comicSpreadForIndex(targetIndex, images.length, readerOptions);
+    const ordered = rightToLeft ? [...targetSpread].reverse() : targetSpread;
+    return ordered
+      .map((pageIndex) => images[pageIndex])
+      .filter((img): img is ImageListItemDto => Boolean(img));
+  }
+
+  const adjacentWipePreview = $derived.by((): (SpreadWipeSnapshot & { offset: number }) | null => {
+    if (
+      readerMode !== READER_MODE.paged ||
+      wipeVisuals.phase !== "dragging" ||
+      wipeVisuals.axis !== "horizontal" ||
+      wipeVisuals.offsetX === 0
+    ) {
+      return null;
+    }
+    const stageWidth = pagedStage?.getBoundingClientRect().width ?? 0;
+    const offset = computeAdjacentPreviewOffset(wipeVisuals.offsetX, stageWidth);
+    if (offset === null) return null;
+
+    const isForwardSwipe = (wipeVisuals.offsetX < 0) !== rightToLeft;
+    if (isForwardSwipe) {
+      if (showingChapterEndPage || images.length === 0) return null;
+      if (isLastReadableSpread()) {
+        return hasEndAction ? { offset, isEndPage: true, spreadImages: [] } : null;
+      }
+      const nextIdx = nextComicIndex(index, images.length, readerOptions);
+      if (nextIdx === index) return null;
+      return { offset, isEndPage: false, spreadImages: resolvePreviewSpread(nextIdx) };
+    }
+
+    if (showingChapterEndPage) {
+      return images.length > 0
+        ? { offset, isEndPage: false, spreadImages: resolvePreviewSpread(lastReadableIndex()) }
+        : null;
+    }
+    if (index <= 0) return null;
+    const prevIdx = previousComicIndex(index, images.length, readerOptions);
+    return { offset, isEndPage: false, spreadImages: resolvePreviewSpread(prevIdx) };
+  });
 
   const activeWebtoonClasses = $derived(WEBTOON_FIT_CLASSES[fitMode]);
   const activePagedClasses = $derived(PAGED_FIT_CLASSES[fitMode]);
@@ -218,8 +312,14 @@
     }
   }
 
+  function resetWipe() {
+    outgoingSpread = null;
+    wipeController.reset();
+  }
+
   function setReaderMode(mode: ReaderMode) {
     if (mode === readerMode) return;
+    resetWipe();
     readerMode = mode;
     if (mode === READER_MODE.webtoon && index >= images.length) {
       setReaderIndex(lastReadableIndex());
@@ -235,6 +335,16 @@
   }
 
   function goNext() {
+    resetWipe();
+    advanceNext();
+  }
+
+  function goPrev() {
+    resetWipe();
+    advancePrev();
+  }
+
+  function advanceNext() {
     if (showingChapterEndPage) {
       void goChapterEndAction();
       return;
@@ -246,7 +356,7 @@
     setReaderIndex(nextComicIndex(index, images.length, readerOptions));
   }
 
-  function goPrev() {
+  function advancePrev() {
     if (showingChapterEndPage) {
       setReaderIndex(lastReadableIndex());
       return;
@@ -321,6 +431,24 @@
   // tap nor a swipe and are ignored so a slightly imprecise tap does nothing.
   const READER_SWIPE_THRESHOLD = 50;
 
+  function pagedWipeCapabilities() {
+    const canAdvance = canGoForwardFromCurrent();
+    const canBack = canGoBackwardFromCurrent();
+    return {
+      canGoLeft: rightToLeft ? canBack : canAdvance,
+      canGoRight: rightToLeft ? canAdvance : canBack,
+    };
+  }
+
+  function pagedScrollCapabilities(stage: HTMLElement) {
+    return {
+      canScrollVertically:
+        fitMode === COMIC_FIT_MODE.width && stage.scrollHeight > stage.clientHeight + 2,
+      canScrollHorizontally:
+        fitMode === COMIC_FIT_MODE.height && stage.scrollWidth > stage.clientWidth + 2,
+    };
+  }
+
   function handleReaderPointerDown(event: PointerEvent) {
     if ((event.target as HTMLElement).closest("[data-reader-control]")) return;
     const stage = event.currentTarget as HTMLElement;
@@ -328,9 +456,11 @@
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
+      startTime: Date.now(),
       startScrollTop: stage.scrollTop,
       startScrollLeft: stage.scrollLeft,
       moved: false,
+      axis: "none",
     };
     // Capture so a non-scrolling paged swipe that drifts off the stage still resolves here.
     // Webtoon mode and scrollable paged fit modes scroll natively, so they must not capture.
@@ -347,12 +477,52 @@
     if (!readerPointerGesture || readerPointerGesture.pointerId !== event.pointerId) return;
     const deltaX = event.clientX - readerPointerGesture.startX;
     const deltaY = event.clientY - readerPointerGesture.startY;
-    if (Math.hypot(deltaX, deltaY) > 10) {
+    if (Math.hypot(deltaX, deltaY) > WIPE_SLOP_PX) {
       readerPointerGesture.moved = true;
+    }
+
+    if (readerMode !== READER_MODE.paged || event.pointerType === "mouse") return;
+
+    const stage = event.currentTarget as HTMLElement;
+    const { canScrollVertically, canScrollHorizontally } = pagedScrollCapabilities(stage);
+
+    if (readerPointerGesture.axis === "none") {
+      const locked = lockWipeAxis(deltaX, deltaY, {
+        allowHorizontal: !canScrollHorizontally,
+        allowDismiss: !canScrollVertically,
+      });
+      if (locked === "none") return;
+      readerPointerGesture.axis = locked;
+      outgoingSpread = null;
+    }
+
+    const rect = stage.getBoundingClientRect();
+    const { canGoLeft, canGoRight } = pagedWipeCapabilities();
+
+    if (readerPointerGesture.axis === "horizontal") {
+      const canProceed = deltaX < 0 ? canGoLeft : canGoRight;
+      wipeController.drag({
+        axis: "horizontal",
+        offsetX: applyWipeResistance(deltaX, canProceed),
+        offsetY: 0,
+        stageWidth: rect.width,
+        stageHeight: rect.height,
+      });
+    } else if (readerPointerGesture.axis === "vertical") {
+      wipeController.drag({
+        axis: "vertical",
+        offsetX: 0,
+        offsetY: Math.max(0, deltaY),
+        stageWidth: rect.width,
+        stageHeight: rect.height,
+      });
     }
   }
 
   function clearReaderPointerGesture() {
+    if (readerPointerGesture?.axis && readerPointerGesture.axis !== "none") {
+      wipeController.snapBack();
+    }
     readerPointerGesture = null;
   }
 
@@ -364,7 +534,7 @@
     }
     const stage = event.currentTarget as HTMLElement;
     const gesture = readerPointerGesture;
-    clearReaderPointerGesture();
+    readerPointerGesture = null;
 
     // Swipe detection needs the gesture's start point. A pointerup without a tracked
     // pointerdown (e.g. a synthetic mouse click) still falls through to the tap zones.
@@ -372,35 +542,73 @@
       const scrolled =
         Math.abs(stage.scrollTop - gesture.startScrollTop) > 2
         || Math.abs(stage.scrollLeft - gesture.startScrollLeft) > 2;
-      if (scrolled) return;
+      if (scrolled) {
+        if (gesture.axis !== "none") wipeController.snapBack();
+        return;
+      }
 
       const dx = event.clientX - gesture.startX;
       const dy = event.clientY - gesture.startY;
-      const absX = Math.abs(dx);
-      const absY = Math.abs(dy);
+      const elapsed = Date.now() - gesture.startTime;
 
       // Touch swipes (paged mode only): horizontal turns the page, a downward swipe
       // dismisses the reader — except along any axis currently owned by stage scroll.
-      if (
-        readerMode === READER_MODE.paged &&
-        event.pointerType !== "mouse" &&
-        Math.max(absX, absY) > READER_SWIPE_THRESHOLD
-      ) {
-        const canScrollVertically =
-          fitMode === COMIC_FIT_MODE.width && stage.scrollHeight > stage.clientHeight + 2;
-        const canScrollHorizontally =
-          fitMode === COMIC_FIT_MODE.height && stage.scrollWidth > stage.clientWidth + 2;
+      if (readerMode === READER_MODE.paged && event.pointerType !== "mouse") {
+        const rect = stage.getBoundingClientRect();
+        const { canScrollVertically, canScrollHorizontally } = pagedScrollCapabilities(stage);
+        const effectiveAxis = gesture.axis !== "none"
+          ? gesture.axis
+          : lockWipeAxis(dx, dy, {
+              allowHorizontal: !canScrollHorizontally,
+              allowDismiss: !canScrollVertically,
+            });
+        const { canGoLeft, canGoRight } = pagedWipeCapabilities();
+        const commit = resolveWipeCommit({
+          axis: effectiveAxis,
+          deltaX: dx,
+          deltaY: dy,
+          elapsedMs: elapsed,
+          stageWidth: rect.width,
+          stageHeight: rect.height,
+          canGoLeft,
+          canGoRight,
+          canDismiss: !canScrollVertically,
+          minDistancePx: READER_SWIPE_THRESHOLD,
+        });
 
-        if (absX > absY * 1.3 && !canScrollHorizontally) {
-          if ((dx < 0) !== rightToLeft) goNext();
-          else goPrev();
+        if (commit === "left" || commit === "right") {
+          const isForward = (commit === "left") !== rightToLeft;
+          if (isForward && showingChapterEndPage) {
+            resetWipe();
+            void goChapterEndAction();
+            return;
+          }
+          outgoingSpread = {
+            isEndPage: showingChapterEndPage,
+            spreadImages: displayedSpread
+              .map((pageIndex) => images[pageIndex])
+              .filter((img): img is ImageListItemDto => Boolean(img)),
+          };
+          wipeController.commitHorizontal({
+            direction: commit,
+            fromOffsetX: wipeVisuals.offsetX,
+            stageWidth: rect.width,
+            onSwap: () => {
+              if (isForward) advanceNext();
+              else advancePrev();
+            },
+          });
           return;
         }
-        if (absY > absX * 1.3 && dy > 0 && !canScrollVertically) {
+        if (commit === "down") {
+          resetWipe();
           onClose();
           return;
         }
-        return;
+        if (gesture.axis !== "none") {
+          wipeController.snapBack();
+          return;
+        }
       }
 
       // Moved past the tap slop but didn't commit to a swipe — ignore it.
@@ -634,7 +842,10 @@
       </div>
     </div>
   {:else}
-    <div class="relative flex flex-1 min-h-0 w-full bg-black">
+    <div
+      class="relative flex flex-1 min-h-0 w-full overflow-hidden bg-black"
+      style:background={isVerticalDismissWipe ? `rgb(0 0 0 / ${wipeVisuals.backdropOpacity})` : undefined}
+    >
       {#if images.length > 1 || hasEndAction}
         <Button variant="outline" size="sm"
           type="button"
@@ -658,6 +869,31 @@
         </Button>
       {/if}
 
+      {#if outgoingSpread && (wipeVisuals.phase === "entering" || wipeVisuals.phase === "settling")}
+        <div
+          class="comic-wipe-pane pointer-events-none p-0 sm:px-14 sm:py-3"
+          data-comic-wipe-outgoing
+          style:transform={`translate3d(${wipeVisuals.outgoingOffsetX}px, 0, 0)`}
+          style:transition={wipeTransitionStyle}
+        >
+          <ComicReaderSpread
+            spreadImages={outgoingSpread.spreadImages}
+            isEndPage={outgoingSpread.isEndPage}
+            interactive={false}
+            {fitMode}
+            spreadClass={activePagedClasses.spread}
+            blurClass={activePagedClasses.blur}
+            imageClass={activePagedClasses.image}
+            {hasNextChapter}
+            {chapterEndTitle}
+            {chapterEndActionLabel}
+            {nextChapterBusy}
+            {imageSrc}
+            onChapterEndAction={() => void goChapterEndAction()}
+          />
+        </div>
+      {/if}
+
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         bind:this={pagedStage}
@@ -668,53 +904,90 @@
         onpointerup={handleReaderPointerUp}
         onpointercancel={clearReaderPointerGesture}
       >
-        {#if showingChapterEndPage}
-          <div class="my-auto flex w-full flex-col items-center justify-center">
-            <div class="reader-next-chapter-page" data-reader-control>
-              <div class="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-text-accent">
-                {hasNextChapter ? "Next Chapter" : "No next chapter"}
-              </div>
-              <h3 class="mt-3 max-w-[32rem] text-center font-heading text-2xl font-semibold text-text-primary sm:text-4xl">
-                {chapterEndTitle}
-              </h3>
-              <Button variant="outline" size="sm"
-                type="button"
-                onclick={() => void goChapterEndAction()}
-                disabled={nextChapterBusy}
-                class="mt-6"
-              >
-                {chapterEndActionLabel}
-                <ChevronRight class="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        {:else}
-          <div
-            class={fitMode === COMIC_FIT_MODE.screen
-              ? `${activePagedClasses.spread} ${spread.length > 1 ? "max-w-7xl" : "max-w-5xl"}`
-              : activePagedClasses.spread}
-          >
-            {#each displayedSpread as pageIndex (pageIndex)}
-              {@const image = images[pageIndex]}
-              {#if image}
-                <NsfwBlur isNsfw={false} class={activePagedClasses.blur}>
-                  <img
-                    src={imageSrc(image)}
-                    alt={image.title}
-                    class={activePagedClasses.image}
-                    loading="eager"
-                    decoding="sync"
-                  />
-                </NsfwBlur>
-              {/if}
-            {/each}
-          </div>
-        {/if}
+        <div
+          class="comic-wipe-active-stage"
+          data-comic-wipe-active
+          style:transform={wipeActiveTransform}
+          style:transition={wipeTransitionStyle}
+          style:opacity={isVerticalDismissWipe ? Math.max(0.45, wipeVisuals.backdropOpacity) : undefined}
+        >
+          <ComicReaderSpread
+            spreadImages={displayedSpread
+              .map((pageIndex) => images[pageIndex])
+              .filter((img): img is ImageListItemDto => Boolean(img))}
+            isEndPage={showingChapterEndPage}
+            interactive={true}
+            {fitMode}
+            spreadClass={activePagedClasses.spread}
+            blurClass={activePagedClasses.blur}
+            imageClass={activePagedClasses.image}
+            {hasNextChapter}
+            {chapterEndTitle}
+            {chapterEndActionLabel}
+            {nextChapterBusy}
+            {imageSrc}
+            onChapterEndAction={() => void goChapterEndAction()}
+          />
+        </div>
       </div>
+
+      {#if adjacentWipePreview}
+        <div
+          class="comic-wipe-pane pointer-events-none p-0 sm:px-14 sm:py-3"
+          data-comic-wipe-adjacent
+          style:transform={`translate3d(${adjacentWipePreview.offset}px, 0, 0)`}
+        >
+          <ComicReaderSpread
+            spreadImages={adjacentWipePreview.spreadImages}
+            isEndPage={adjacentWipePreview.isEndPage}
+            interactive={false}
+            {fitMode}
+            spreadClass={activePagedClasses.spread}
+            blurClass={activePagedClasses.blur}
+            imageClass={activePagedClasses.image}
+            {hasNextChapter}
+            {chapterEndTitle}
+            {chapterEndActionLabel}
+            {nextChapterBusy}
+            {imageSrc}
+            onChapterEndAction={() => void goChapterEndAction()}
+          />
+        </div>
+      {/if}
     </div>
   {/if}
 </ReaderShell>
 
 <style>
+  .reader-stage-paged {
+    touch-action: none;
+    user-select: none;
+  }
 
+  .reader-stage-paged[data-comic-fit-mode="width"] {
+    touch-action: pan-y;
+  }
+
+  .reader-stage-paged[data-comic-fit-mode="height"] {
+    touch-action: pan-x;
+  }
+
+  .comic-wipe-active-stage {
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
+    width: 100%;
+    min-height: 100%;
+    will-change: transform;
+  }
+
+  .comic-wipe-pane {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    will-change: transform;
+  }
 </style>
