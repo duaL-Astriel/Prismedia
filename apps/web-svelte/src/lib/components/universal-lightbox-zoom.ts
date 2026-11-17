@@ -2,8 +2,16 @@
  * Pure transform and gesture math for the universal lightbox.
  *
  * Provides coordinate transformations, focal-point scaling, two-finger pinch-to-zoom,
- * translation clamping, and gesture disambiguation (pan vs. swipe-to-navigate/dismiss).
+ * translation clamping, and gesture disambiguation (pan vs. wipe-to-navigate/dismiss).
  */
+
+import {
+  WIPE_DOMINANCE_RATIO,
+  applyWipeResistance,
+  lockWipeAxis,
+  resolveWipeCommit,
+  type WipeAxis,
+} from "$lib/gestures/wipe-gesture";
 
 export interface Point {
   x: number;
@@ -60,6 +68,15 @@ export interface LightboxGestureState {
   naturalW: number;
   naturalH: number;
   isVideo: boolean;
+  canNavigate?: boolean;
+}
+
+export interface LightboxWipeDragEvent {
+  axis: WipeAxis;
+  offsetX: number;
+  offsetY: number;
+  stageWidth: number;
+  stageHeight: number;
 }
 
 export interface LightboxGestureHandlerOptions {
@@ -68,7 +85,14 @@ export interface LightboxGestureHandlerOptions {
   setPanning?: (panning: boolean) => void;
   onNavigate: (action: "next" | "prev") => void;
   onDismiss: () => void;
+  onWipeDrag?: (wipe: LightboxWipeDragEvent) => void;
+  onWipeSnapBack?: () => void;
+  onWipeCommit?: (
+    action: "next" | "prev",
+    details: { fromOffsetX: number; stageWidth: number },
+  ) => void;
   suppressClick?: () => void;
+  clearSuppressClick?: () => void;
   doubleTapMs?: number;
   minScale?: number;
   maxScale?: number;
@@ -78,6 +102,7 @@ export interface LightboxGestureHandler {
   onPointerDown: (event: PointerEvent) => void;
   onPointerMove: (event: PointerEvent) => void;
   onPointerUp: (event: PointerEvent) => void;
+  onPointerCancel: (event: PointerEvent) => void;
   onDoubleClick: (event: MouseEvent) => void;
   reset: () => void;
 }
@@ -309,8 +334,8 @@ export function resolveSwipeAction(params: SwipeDecisionParams): SwipeAction {
     return "none";
   }
 
-  const isHorizontal = absX > absY * 1.3;
-  const isVerticalDismiss = absY > absX * 1.3 && deltaY > 0;
+  const isHorizontal = absX > absY * WIPE_DOMINANCE_RATIO;
+  const isVerticalDismiss = absY > absX * WIPE_DOMINANCE_RATIO && deltaY > 0;
 
   if (!isHorizontal && !isVerticalDismiss) {
     return "none";
@@ -342,9 +367,10 @@ export function createLightboxGestureHandler(
   const doubleTapMs = options.doubleTapMs ?? 300;
   const minScale = options.minScale ?? 0.3;
   const maxScale = options.maxScale ?? 8;
+  const boundaryTolerancePx = 4;
 
   const activePointers = new Map<number, Point>();
-  let pointerStart: { x: number; y: number; t: number } | null = null;
+  let pointerStart: { x: number; y: number; t: number; pointerId: number } | null = null;
   let dragStartTranslate: Point = { x: 0, y: 0 };
   let lastPointerPos: Point = { x: 0, y: 0 };
   let isPinching = false;
@@ -353,6 +379,10 @@ export function createLightboxGestureHandler(
   let pinchStartTransform: TransformState = { scale: 1, translateX: 0, translateY: 0 };
   let lastTapAt = 0;
   let lastTapPos: Point = { x: 0, y: 0 };
+  let wipeAxis: WipeAxis = "none";
+  let wipeOffsetX = 0;
+  let wipeOffsetY = 0;
+  let capturedTarget: HTMLElement | null = null;
 
   const transformOf = (state: LightboxGestureState): TransformState => ({
     scale: state.scale,
@@ -364,6 +394,98 @@ export function createLightboxGestureHandler(
     calculateClampBounds(rect, { width: state.naturalW, height: state.naturalH }, scale, { margin });
 
   const panMargin = (rect: ViewportRect) => Math.max(40, Math.min(rect.width, rect.height) * 0.1);
+
+  function capturePointer(target: EventTarget | null, pointerId: number) {
+    const el = target as HTMLElement | null;
+    if (typeof el?.setPointerCapture !== "function") return;
+    try {
+      el.setPointerCapture(pointerId);
+      capturedTarget = el;
+    } catch {}
+  }
+
+  function releaseCapture(target: EventTarget | null, pointerId: number) {
+    const el = (target as HTMLElement | null) ?? capturedTarget;
+    capturedTarget = null;
+    if (typeof el?.releasePointerCapture !== "function") return;
+    try {
+      el.releasePointerCapture(pointerId);
+    } catch {}
+  }
+
+  function isInsideVideoControlStrip(event: PointerEvent): boolean {
+    const target = event.target as HTMLElement | null;
+    if (!target) return false;
+    if (target.closest("media-time-slider, [data-lightbox-no-wipe], [role='slider']")) return true;
+    if (typeof HTMLVideoElement !== "undefined" && target instanceof HTMLVideoElement && target.controls) {
+      const rect = target.getBoundingClientRect();
+      if (rect.height > 0 && event.clientY >= rect.bottom - 48) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function clearWipeTracking() {
+    wipeAxis = "none";
+    wipeOffsetX = 0;
+    wipeOffsetY = 0;
+  }
+
+  function isZoomedBoundaryWipeAllowed(
+    state: LightboxGestureState,
+    bounds: ClampBounds,
+    axis: WipeAxis,
+    dx: number,
+    dy: number,
+  ): boolean {
+    if (!isZoomedBeyondFit(state.scale, state.fitScale)) return true;
+    if (axis === "horizontal") {
+      if (dx < 0 && dragStartTranslate.x <= bounds.minX + boundaryTolerancePx) return true;
+      if (dx > 0 && dragStartTranslate.x >= bounds.maxX - boundaryTolerancePx) return true;
+      return false;
+    }
+    if (axis === "vertical") {
+      return dy > 0 && dragStartTranslate.y >= bounds.maxY - boundaryTolerancePx;
+    }
+    return false;
+  }
+
+  function emitWipeDrag(state: LightboxGestureState, axis: WipeAxis, dx: number, dy: number) {
+    const stageWidth = state.stageRect?.width ?? 0;
+    const stageHeight = state.stageRect?.height ?? 0;
+    const canNavigate = state.canNavigate ?? true;
+
+    if (axis === "horizontal") {
+      wipeOffsetX = applyWipeResistance(dx, canNavigate);
+      wipeOffsetY = 0;
+    } else if (axis === "vertical") {
+      wipeOffsetX = 0;
+      wipeOffsetY = Math.max(0, dy);
+    } else {
+      wipeOffsetX = 0;
+      wipeOffsetY = 0;
+    }
+
+    options.onWipeDrag?.({
+      axis,
+      offsetX: wipeOffsetX,
+      offsetY: wipeOffsetY,
+      stageWidth,
+      stageHeight,
+    });
+  }
+
+  function commitNavigation(action: "next" | "prev", state: LightboxGestureState, fromOffsetX: number) {
+    if (options.onWipeCommit) {
+      options.onWipeCommit(action, {
+        fromOffsetX,
+        stageWidth: state.stageRect?.width ?? 0,
+      });
+    } else {
+      options.onNavigate(action);
+    }
+  }
 
   /** Clamps `next` into the media bounds at its own scale and commits it. */
   function commitClamped(
@@ -387,30 +509,40 @@ export function createLightboxGestureHandler(
   }
 
   function onPointerDown(event: PointerEvent) {
+    options.clearSuppressClick?.();
     const state = options.getState();
+    const pointerId = event.pointerId ?? 0;
+
     if (state.isVideo) {
-      pointerStart = event.pointerType === "mouse" ? null : { x: event.clientX, y: event.clientY, t: Date.now() };
+      if (event.pointerType === "mouse" || isInsideVideoControlStrip(event)) {
+        pointerStart = null;
+        clearWipeTracking();
+        options.setPanning?.(false);
+        return;
+      }
+      pointerStart = { x: event.clientX, y: event.clientY, t: Date.now(), pointerId };
+      clearWipeTracking();
       options.setPanning?.(false);
       return;
     }
     if (event.pointerType === "mouse" && event.button !== 0) return;
 
-    if (typeof (event.currentTarget as HTMLElement)?.setPointerCapture === "function") {
-      try {
-        (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-      } catch {}
-    }
+    capturePointer(event.currentTarget, event.pointerId);
 
-    const pointerId = event.pointerId ?? 0;
     activePointers.set(pointerId, { x: event.clientX, y: event.clientY });
 
     if (activePointers.size === 1) {
-      pointerStart = { x: event.clientX, y: event.clientY, t: Date.now() };
+      pointerStart = { x: event.clientX, y: event.clientY, t: Date.now(), pointerId };
       dragStartTranslate = { x: state.translateX, y: state.translateY };
       lastPointerPos = { x: event.clientX, y: event.clientY };
+      clearWipeTracking();
       const isZoomed = isZoomedBeyondFit(state.scale, state.fitScale);
       options.setPanning?.(isZoomed);
     } else if (activePointers.size === 2) {
+      if (wipeAxis !== "none") {
+        clearWipeTracking();
+        options.onWipeSnapBack?.();
+      }
       const [p1, p2] = Array.from(activePointers.values());
       pinchStartDist = getDistance(p1, p2);
       pinchStartCentroid = state.stageRect
@@ -424,12 +556,28 @@ export function createLightboxGestureHandler(
   }
 
   function onPointerMove(event: PointerEvent) {
+    const state = options.getState();
     const pointerId = event.pointerId ?? 0;
+
+    if (state.isVideo) {
+      if (event.pointerType === "mouse" || !pointerStart || pointerStart.pointerId !== pointerId) return;
+      const dx = event.clientX - pointerStart.x;
+      const dy = event.clientY - pointerStart.y;
+
+      if (wipeAxis === "none") {
+        const locked = lockWipeAxis(dx, dy);
+        if (locked === "none") return;
+        wipeAxis = locked;
+        capturePointer(event.currentTarget, event.pointerId);
+        options.suppressClick?.();
+      }
+
+      emitWipeDrag(state, wipeAxis, dx, dy);
+      return;
+    }
+
     if (!activePointers.has(pointerId)) return;
     activePointers.set(pointerId, { x: event.clientX, y: event.clientY });
-
-    const state = options.getState();
-    if (state.isVideo) return;
 
     if (isPinching && activePointers.size >= 2) {
       if (!state.stageRect) return;
@@ -451,9 +599,42 @@ export function createLightboxGestureHandler(
     }
 
     if (activePointers.size === 1 && !isPinching) {
-      if (!pointerStart) return;
+      if (!pointerStart || pointerStart.pointerId !== pointerId) return;
+      const dx = event.clientX - pointerStart.x;
+      const dy = event.clientY - pointerStart.y;
       const isZoomed = isZoomedBeyondFit(state.scale, state.fitScale);
+
+      if (!isZoomed && event.pointerType !== "mouse") {
+        if (wipeAxis === "none") {
+          const locked = lockWipeAxis(dx, dy);
+          if (locked === "none") return;
+          wipeAxis = locked;
+        }
+        emitWipeDrag(state, wipeAxis, dx, dy);
+        return;
+      }
+
       if (isZoomed && state.stageRect) {
+        const bounds = boundsFor(state, state.stageRect, state.scale);
+        if (event.pointerType !== "mouse") {
+          if (wipeAxis === "none") {
+            const candidate = lockWipeAxis(dx, dy);
+            if (candidate !== "none" && isZoomedBoundaryWipeAllowed(state, bounds, candidate, dx, dy)) {
+              wipeAxis = candidate;
+            }
+          }
+          if (wipeAxis !== "none") {
+            const stillInBoundaryDirection = isZoomedBoundaryWipeAllowed(state, bounds, wipeAxis, dx, dy);
+            emitWipeDrag(
+              state,
+              wipeAxis,
+              stillInBoundaryDirection ? dx : 0,
+              stillInBoundaryDirection ? dy : 0,
+            );
+            return;
+          }
+        }
+
         const deltaX = event.clientX - lastPointerPos.x;
         const deltaY = event.clientY - lastPointerPos.y;
         lastPointerPos = { x: event.clientX, y: event.clientY };
@@ -469,45 +650,71 @@ export function createLightboxGestureHandler(
     }
   }
 
-  function onPointerUp(event: PointerEvent) {
-    if (typeof (event.currentTarget as HTMLElement)?.releasePointerCapture === "function") {
-      try {
-        (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
-      } catch {}
+  function finishVideoPointer(event: PointerEvent, cancelled: boolean) {
+    releaseCapture(event.currentTarget, event.pointerId);
+    const start = pointerStart;
+    const activeAxis = wipeAxis;
+    const fromOffsetX = wipeOffsetX;
+    pointerStart = null;
+    clearWipeTracking();
+    options.setPanning?.(false);
+    if (!start) return;
+
+    if (cancelled) {
+      options.clearSuppressClick?.();
+      if (activeAxis !== "none") options.onWipeSnapBack?.();
+      return;
     }
+
+    const state = options.getState();
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    const elapsed = Date.now() - start.t;
+    const effectiveAxis = activeAxis !== "none" ? activeAxis : lockWipeAxis(dx, dy);
+    const canNavigate = state.canNavigate ?? true;
+
+    const commit = resolveWipeCommit({
+      axis: effectiveAxis,
+      deltaX: dx,
+      deltaY: dy,
+      elapsedMs: elapsed,
+      stageWidth: state.stageRect?.width ?? 0,
+      stageHeight: state.stageRect?.height ?? 0,
+      canGoLeft: canNavigate,
+      canGoRight: canNavigate,
+      canDismiss: true,
+      minDistancePx: 60,
+    });
+
+    if (commit === "left" || commit === "right") {
+      options.suppressClick?.();
+      commitNavigation(commit === "left" ? "next" : "prev", state, fromOffsetX);
+      return;
+    }
+    if (commit === "down") {
+      options.suppressClick?.();
+      options.onDismiss();
+      return;
+    }
+    if (activeAxis !== "none") {
+      options.onWipeSnapBack?.();
+    }
+  }
+
+  function finishPointer(event: PointerEvent, cancelled: boolean) {
+    const state = options.getState();
+    if (state.isVideo) {
+      finishVideoPointer(event, cancelled);
+      return;
+    }
+
+    releaseCapture(event.currentTarget, event.pointerId);
 
     const pointerId = event.pointerId ?? 0;
     activePointers.delete(pointerId);
 
-    const state = options.getState();
-
-    if (state.isVideo) {
-      const start = pointerStart;
-      pointerStart = null;
-      options.setPanning?.(false);
-      if (!start) return;
-
-      const dx = event.clientX - start.x;
-      const dy = event.clientY - start.y;
-      const elapsed = Date.now() - start.t;
-      const absX = Math.abs(dx);
-      const absY = Math.abs(dy);
-      if (elapsed < 700 && Math.max(absX, absY) > 60) {
-        if (absX > absY * 1.3) {
-          options.onNavigate(dx < 0 ? "next" : "prev");
-          options.suppressClick?.();
-          return;
-        }
-        if (absY > absX * 1.3 && dy > 0) {
-          options.onDismiss();
-          options.suppressClick?.();
-          return;
-        }
-      }
-      return;
-    }
-
     if (isPinching) {
+      clearWipeTracking();
       if (activePointers.size === 0) {
         isPinching = false;
         if (state.scale < state.fitScale) {
@@ -526,11 +733,22 @@ export function createLightboxGestureHandler(
     }
 
     const start = pointerStart;
+    const activeAxis = wipeAxis;
+    const fromOffsetX = wipeOffsetX;
     pointerStart = null;
+    clearWipeTracking();
     options.setPanning?.(false);
     const isZoomed = isZoomedBeyondFit(state.scale, state.fitScale);
 
+    if (cancelled) {
+      options.clearSuppressClick?.();
+      if (activeAxis !== "none") options.onWipeSnapBack?.();
+      if (isZoomed && state.stageRect) commitClamped(state, state.stageRect, transformOf(state), true);
+      return;
+    }
+
     if (!start) {
+      if (activeAxis !== "none") options.onWipeSnapBack?.();
       if (isZoomed && state.stageRect) commitClamped(state, state.stageRect, transformOf(state), true);
       return;
     }
@@ -550,24 +768,57 @@ export function createLightboxGestureHandler(
       ? boundsFor(state, state.stageRect, state.scale)
       : { minX: 0, maxX: 0, minY: 0, maxY: 0 };
 
-    const swipeAction = resolveSwipeAction({
-      scale: state.scale,
-      fitScale: state.fitScale,
-      deltaX: dx,
-      deltaY: dy,
-      elapsedMs: elapsed,
-      currentTranslate: dragStartTranslate,
-      bounds,
-      pointerType: event.pointerType,
-    });
+    const canNavigate = state.canNavigate ?? true;
 
-    if (swipeAction === "next" || swipeAction === "prev") {
-      options.onNavigate(swipeAction);
-      return;
-    }
-    if (swipeAction === "dismiss") {
-      options.onDismiss();
-      return;
+    if (event.pointerType !== "mouse") {
+      const effectiveAxis = activeAxis !== "none" ? activeAxis : lockWipeAxis(dx, dy);
+      const boundaryAllowed = isZoomedBoundaryWipeAllowed(state, bounds, effectiveAxis, dx, dy);
+      const commit = boundaryAllowed
+        ? resolveWipeCommit({
+            axis: effectiveAxis,
+            deltaX: dx,
+            deltaY: dy,
+            elapsedMs: elapsed,
+            stageWidth: state.stageRect?.width ?? 0,
+            stageHeight: state.stageRect?.height ?? 0,
+            canGoLeft: canNavigate,
+            canGoRight: canNavigate,
+            canDismiss: true,
+            minDistancePx: 60,
+          })
+        : "none";
+
+      if (commit === "left" || commit === "right") {
+        commitNavigation(commit === "left" ? "next" : "prev", state, fromOffsetX);
+        return;
+      }
+      if (commit === "down") {
+        options.onDismiss();
+        return;
+      }
+      if (activeAxis !== "none") {
+        options.onWipeSnapBack?.();
+      }
+    } else {
+      const swipeAction = resolveSwipeAction({
+        scale: state.scale,
+        fitScale: state.fitScale,
+        deltaX: dx,
+        deltaY: dy,
+        elapsedMs: elapsed,
+        currentTranslate: dragStartTranslate,
+        bounds,
+        pointerType: event.pointerType,
+      });
+
+      if (swipeAction === "next" || swipeAction === "prev") {
+        options.onNavigate(swipeAction);
+        return;
+      }
+      if (swipeAction === "dismiss") {
+        options.onDismiss();
+        return;
+      }
     }
 
     if (isZoomed && state.stageRect) commitClamped(state, state.stageRect, transformOf(state), true);
@@ -585,6 +836,14 @@ export function createLightboxGestureHandler(
     }
   }
 
+  function onPointerUp(event: PointerEvent) {
+    finishPointer(event, false);
+  }
+
+  function onPointerCancel(event: PointerEvent) {
+    finishPointer(event, true);
+  }
+
   function onDoubleClick(event: MouseEvent) {
     const state = options.getState();
     if (state.isVideo || !state.stageRect) return;
@@ -595,6 +854,7 @@ export function createLightboxGestureHandler(
     activePointers.clear();
     isPinching = false;
     pointerStart = null;
+    clearWipeTracking();
     options.setPanning?.(false);
   }
 
@@ -602,6 +862,7 @@ export function createLightboxGestureHandler(
     onPointerDown,
     onPointerMove,
     onPointerUp,
+    onPointerCancel,
     onDoubleClick,
     reset,
   };

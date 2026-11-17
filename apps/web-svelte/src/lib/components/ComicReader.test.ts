@@ -413,6 +413,170 @@ describe("ComicReader", () => {
 
     expect(onIndexChange).toHaveBeenCalledWith(1);
   });
+
+  it("tracks horizontal paged wipe gestures with adjacent preview and advances page on release", async () => {
+    const onIndexChange = vi.fn();
+    const { container } = render(ComicReader, {
+      props: {
+        images,
+        initialIndex: 0,
+        title: "Comic",
+        onClose: vi.fn(),
+        onIndexChange: onIndexChange as never,
+      },
+    });
+
+    const root = readerRoot(container);
+    const stage = root.querySelector(".reader-stage-paged") as HTMLElement;
+    vi.spyOn(stage, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 800,
+    } as DOMRect);
+
+    await fireEvent(stage, readerPointerEvent("pointerdown", 300, 400, "touch", 11));
+    await fireEvent(stage, readerPointerEvent("pointermove", 190, 404, "touch", 11));
+    await tick();
+
+    const activePane = root.querySelector("[data-comic-wipe-active]") as HTMLElement;
+    const adjacentPane = root.querySelector("[data-comic-wipe-adjacent]") as HTMLElement;
+    expect(activePane.style.transform).toBe("translate3d(-110px, 0px, 0)");
+    expect(adjacentPane).toBeInTheDocument();
+    // Stride = 400 + 16 = 416; adjacent sits at 416 - 110 = 306px
+    expect(adjacentPane.style.transform).toBe("translate3d(306px, 0, 0)");
+
+    await fireEvent(stage, readerPointerEvent("pointerup", 190, 404, "touch", 11));
+    await tick();
+
+    expect(onIndexChange).toHaveBeenCalledWith(1);
+    expect(root.querySelector("[data-comic-wipe-outgoing]")).toBeInTheDocument();
+  });
+
+  it("respects right-to-left direction and boundary resistance during comic wipes", async () => {
+    const onIndexChange = vi.fn();
+    const { container } = render(ComicReader, {
+      props: {
+        images,
+        initialIndex: 0,
+        readingDirection: PAGE_READING_DIRECTION.rightToLeft,
+        title: "Manga",
+        onClose: vi.fn(),
+        onIndexChange: onIndexChange as never,
+      },
+    });
+
+    const root = readerRoot(container);
+    const stage = root.querySelector(".reader-stage-paged") as HTMLElement;
+    vi.spyOn(stage, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 800,
+    } as DOMRect);
+
+    // At page 0 in RTL, dragging left goes backward (no previous page) -> rubber-band
+    await fireEvent(stage, readerPointerEvent("pointerdown", 250, 400, "touch", 12));
+    await fireEvent(stage, readerPointerEvent("pointermove", 150, 400, "touch", 12));
+    await tick();
+    expect((root.querySelector("[data-comic-wipe-active]") as HTMLElement).style.transform).toBe(
+      "translate3d(-28px, 0px, 0)",
+    );
+    await fireEvent(stage, readerPointerEvent("pointerup", 150, 400, "touch", 12));
+    expect(onIndexChange).not.toHaveBeenCalled();
+
+    // Dragging right in RTL advances to page 1
+    await fireEvent(stage, readerPointerEvent("pointerdown", 100, 400, "touch", 13));
+    await fireEvent(stage, readerPointerEvent("pointermove", 220, 400, "touch", 13));
+    await tick();
+    expect((root.querySelector("[data-comic-wipe-active]") as HTMLElement).style.transform).toBe(
+      "translate3d(120px, 0px, 0)",
+    );
+    await fireEvent(stage, readerPointerEvent("pointerup", 220, 400, "touch", 13));
+    expect(onIndexChange).toHaveBeenCalledWith(1);
+  });
+
+  it("supports downward dismiss wipe and ignores cancelled wipes in comic reader", async () => {
+    const onClose = vi.fn();
+    const { container } = render(ComicReader, {
+      props: {
+        images,
+        initialIndex: 0,
+        title: "Comic",
+        onClose,
+      },
+    });
+
+    const root = readerRoot(container);
+    const stage = root.querySelector(".reader-stage-paged") as HTMLElement;
+    vi.spyOn(stage, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 800,
+    } as DOMRect);
+
+    // Cancelled vertical drag must not dismiss
+    await fireEvent(stage, readerPointerEvent("pointerdown", 200, 200, "touch", 14));
+    await fireEvent(stage, readerPointerEvent("pointermove", 200, 320, "touch", 14));
+    await tick();
+    expect((root.querySelector("[data-comic-wipe-active]") as HTMLElement).style.transform).toContain(
+      "translate3d(0px, 120px, 0) scale(",
+    );
+    await fireEvent(stage, readerPointerEvent("pointercancel", 200, 320, "touch", 14));
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Committed downward drag dismisses
+    await fireEvent(stage, readerPointerEvent("pointerdown", 200, 200, "touch", 15));
+    await fireEvent(stage, readerPointerEvent("pointermove", 200, 320, "touch", 15));
+    await fireEvent(stage, readerPointerEvent("pointerup", 200, 320, "touch", 15));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("commits a forward wipe on the chapter-end page by calling onNextChapter without self-sliding", async () => {
+    let resolveNext!: () => void;
+    const onNextChapter = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveNext = resolve;
+        }),
+    );
+
+    const { container } = render(ComicReader, {
+      props: {
+        images,
+        initialIndex: images.length,
+        title: "Comic",
+        nextChapterLabel: "Chapter Two",
+        onClose: vi.fn(),
+        onNextChapter,
+      },
+    });
+
+    const root = readerRoot(container);
+    const stage = root.querySelector(".reader-stage-paged") as HTMLElement;
+    vi.spyOn(stage, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 800,
+    } as DOMRect);
+
+    await fireEvent(stage, readerPointerEvent("pointerdown", 300, 400, "touch", 16));
+    await fireEvent(stage, readerPointerEvent("pointermove", 180, 400, "touch", 16));
+    await fireEvent(stage, readerPointerEvent("pointerup", 180, 400, "touch", 16));
+    await tick();
+
+    expect(onNextChapter).toHaveBeenCalledTimes(1);
+    expect(root.querySelector("[data-comic-wipe-outgoing]")).toBeNull();
+    expect((root.querySelector("[data-comic-wipe-active]") as HTMLElement).style.transform).toBe("");
+
+    resolveNext();
+    await Promise.resolve();
+    await tick();
+
+    expect(root.querySelector('img[alt="Page 1"]')).toBeInTheDocument();
+  });
 });
 
 function readerPointerEvent(

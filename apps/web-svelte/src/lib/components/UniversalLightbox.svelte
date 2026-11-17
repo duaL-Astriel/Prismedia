@@ -1,12 +1,20 @@
 <script lang="ts">
   import { browser } from "$app/environment";
   import { onMount, untrack, type Snippet } from "svelte";
-  import { Button, Dialog, cn } from "@prismedia/ui-svelte";
+  import { Button, Dialog, cn, prefersReducedMotion } from "@prismedia/ui-svelte";
   import { getCapability } from "$lib/api/capabilities";
   import { positiveNumberValue } from "$lib/utils/format";
   import { createNavigationKeyHandler } from "$lib/keyboard/navigation-keyboard";
   import { CAPABILITY_KIND, ENTITY_KIND } from "$lib/entities/entity-codes";
   import { PLAYBACK_MODE } from "$lib/api/generated/codes";
+  import {
+    computeAdjacentPreviewOffset,
+    createWipeTransitionController,
+    formatWipeTransform,
+    formatWipeTransition,
+    idleWipeVisualState,
+    type WipeVisualState,
+  } from "$lib/gestures/wipe-gesture";
   import NsfwBlur from "./nsfw/NsfwBlur.svelte";
   import UniversalLightboxChrome from "./UniversalLightboxChrome.svelte";
   import VideoPlayer, { type VideoPlayerHandle } from "./VideoPlayer.svelte";
@@ -87,8 +95,39 @@
   const pendingImageWarmers = new Map<string, HTMLImageElement>();
   // When a swipe over a video is consumed as navigation/dismiss, the browser
   // still fires a trailing click that would otherwise toggle play. This flag
-  // lets a capture-phase click handler swallow exactly that one click.
+  // lets a capture-phase click handler swallow exactly that one click, while
+  // a safety timeout + pointerdown/cancel reset prevent stale suppression.
   let suppressStageClick = false;
+  let suppressStageClickTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function armSuppressClick() {
+    suppressStageClick = true;
+    if (suppressStageClickTimer) clearTimeout(suppressStageClickTimer);
+    suppressStageClickTimer = setTimeout(() => {
+      suppressStageClick = false;
+      suppressStageClickTimer = null;
+    }, 400);
+  }
+
+  function clearSuppressClick() {
+    suppressStageClick = false;
+    if (suppressStageClickTimer) {
+      clearTimeout(suppressStageClickTimer);
+      suppressStageClickTimer = null;
+    }
+  }
+  let wipeVisuals = $state<WipeVisualState>(idleWipeVisualState());
+  let outgoingSnapshot = $state<{ src: string | null; isNsfw: boolean; title: string } | null>(null);
+
+  const wipeController = createWipeTransitionController({
+    onUpdate: (next) => {
+      wipeVisuals = next;
+    },
+    onAnimationEnd: () => {
+      outgoingSnapshot = null;
+    },
+    isReducedMotion: prefersReducedMotion,
+  });
 
   const current = $derived(entities[index] ?? null);
   const currentTechnical = $derived(current ? getCapability(current.capabilities, CAPABILITY_KIND.technical) : null);
@@ -130,6 +169,35 @@
     preloadSources.filter((source) => source.as === "image").map((source) => source.src),
   );
   const counterText = $derived(`${index + 1} / ${entities.length}`);
+  const adjacentWipePreview = $derived.by(() => {
+    if (
+      entities.length <= 1 ||
+      wipeVisuals.phase !== "dragging" ||
+      wipeVisuals.axis !== "horizontal" ||
+      wipeVisuals.offsetX === 0
+    ) {
+      return null;
+    }
+    const stageWidth = stageEl?.getBoundingClientRect().width ?? 0;
+    const offset = computeAdjacentPreviewOffset(wipeVisuals.offsetX, stageWidth);
+    if (offset === null) return null;
+    const neighborIndex =
+      wipeVisuals.offsetX < 0
+        ? (index + 1) % entities.length
+        : (index - 1 + entities.length) % entities.length;
+    const neighbor = entities[neighborIndex];
+    if (!neighbor) return null;
+    return {
+      offset,
+      src: previewSrcForEntity(neighbor),
+      isNsfw: neighbor.isNsfw === true,
+      title: neighbor.title,
+    };
+  });
+  const reducedMotion = $derived(prefersReducedMotion());
+  const wipeActiveTransform = $derived(formatWipeTransform(wipeVisuals));
+  const wipeTransitionStyle = $derived(formatWipeTransition(wipeVisuals.phase, reducedMotion));
+  const isVerticalDismissWipe = $derived(wipeVisuals.axis === "vertical" && wipeVisuals.offsetY > 0);
   const canOpenDetails = $derived(Boolean(detailsContent && current));
   const keyboardHintText = $derived.by(() => {
     const ratingHint = showRatingControls ? " · 1-5 rate" : "";
@@ -202,14 +270,35 @@
     scheduleFitForCurrentMedia(currentMediaKey);
   });
 
-  function goPrev() {
+  function previewSrcForEntity(entity: UniversalLightboxEntity | null | undefined): string | null {
+    if (!entity) return null;
+    if (isLightboxVideoCapable(entity)) {
+      return entity.coverUrl ?? null;
+    }
+    return buildLightboxImageSources(entity)[0]?.src ?? entity.coverUrl ?? null;
+  }
+
+  function selectIndex(nextIndex: number) {
+    outgoingSnapshot = null;
+    wipeController.reset();
+    index = nextIndex;
+  }
+
+  function stepIndex(delta: number) {
     if (entities.length === 0) return;
-    index = (index - 1 + entities.length) % entities.length;
+    index = (index + delta + entities.length) % entities.length;
+  }
+
+  function goPrev() {
+    outgoingSnapshot = null;
+    wipeController.reset();
+    stepIndex(-1);
   }
 
   function goNext() {
-    if (entities.length === 0) return;
-    index = (index + 1) % entities.length;
+    outgoingSnapshot = null;
+    wipeController.reset();
+    stepIndex(1);
   }
 
   function animateTransform(durationMs = 240) {
@@ -343,6 +432,7 @@
       naturalW,
       naturalH,
       isVideo: isCurrentVideo,
+      canNavigate: entities.length > 1,
     }),
     setTransform: (next, options) => {
       scale = next.scale;
@@ -358,12 +448,37 @@
       if (action === "next") goNext();
       else goPrev();
     },
+    onWipeDrag: (wipe) => {
+      outgoingSnapshot = null;
+      wipeController.drag(wipe);
+    },
+    onWipeSnapBack: () => {
+      outgoingSnapshot = null;
+      wipeController.snapBack();
+    },
+    onWipeCommit: (action, { fromOffsetX, stageWidth }) => {
+      const leaving = current;
+      outgoingSnapshot = leaving
+        ? {
+            src: previewSrcForEntity(leaving),
+            isNsfw: leaving.isNsfw === true,
+            title: leaving.title,
+          }
+        : null;
+      wipeController.commitHorizontal({
+        direction: action === "next" ? "left" : "right",
+        fromOffsetX,
+        stageWidth,
+        onSwap: () => stepIndex(action === "next" ? 1 : -1),
+      });
+    },
     onDismiss: () => {
+      outgoingSnapshot = null;
+      wipeController.reset();
       onClose();
     },
-    suppressClick: () => {
-      suppressStageClick = true;
-    },
+    suppressClick: armSuppressClick,
+    clearSuppressClick,
     doubleTapMs: DOUBLE_TAP_MS,
     minScale: MIN_SCALE,
     maxScale: MAX_SCALE,
@@ -395,7 +510,7 @@
 
   function handleStageClickCapture(event: MouseEvent) {
     if (!suppressStageClick) return;
-    suppressStageClick = false;
+    clearSuppressClick();
     event.preventDefault();
     event.stopPropagation();
   }
@@ -453,6 +568,8 @@
       window.removeEventListener("keydown", onKey);
       observer.disconnect();
       if (transitionTimeout) clearTimeout(transitionTimeout);
+      clearSuppressClick();
+      wipeController.reset();
     };
   });
 
@@ -465,7 +582,11 @@
 </svelte:head>
 
 <Dialog open fullscreen ariaLabel={current?.title ?? "Media viewer"} {onClose}>
-<div bind:this={navigationRoot} class="universal-lightbox">
+<div
+  bind:this={navigationRoot}
+  class="universal-lightbox"
+  style:background={isVerticalDismissWipe ? `rgb(0 0 0 / ${wipeVisuals.backdropOpacity})` : undefined}
+>
   <UniversalLightboxChrome
     section="top"
     title={current?.title}
@@ -503,12 +624,44 @@
         onpointerdown={(e) => gestureHandler.onPointerDown(e)}
         onpointermove={(e) => gestureHandler.onPointerMove(e)}
         onpointerup={(e) => gestureHandler.onPointerUp(e)}
-        onpointercancel={(e) => gestureHandler.onPointerUp(e)}
+        onpointercancel={(e) => gestureHandler.onPointerCancel(e)}
         onclickcapture={handleStageClickCapture}
         ondblclick={(e) => gestureHandler.onDoubleClick(e)}
         style:cursor={!isCurrentVideo && isZoomedBeyondFit(scale, fitScale) ? (panning ? "grabbing" : "grab") : "default"}
       >
+        {#snippet wipePreviewContent(src: string | null, isNsfw: boolean)}
+          <NsfwBlur {isNsfw} class="lightbox-media-guard">
+            {#if src}
+              <img
+                {src}
+                alt=""
+                aria-hidden="true"
+                class="lightbox-wipe-preview-image"
+                draggable="false"
+              />
+            {/if}
+          </NsfwBlur>
+        {/snippet}
+
+        {#if outgoingSnapshot && (wipeVisuals.phase === "entering" || wipeVisuals.phase === "settling")}
+          <div
+            class="lightbox-wipe-pane pointer-events-none"
+            data-lightbox-wipe-outgoing
+            style:transform={`translate3d(${wipeVisuals.outgoingOffsetX}px, 0, 0)`}
+            style:transition={wipeTransitionStyle}
+          >
+            {@render wipePreviewContent(outgoingSnapshot.src, outgoingSnapshot.isNsfw)}
+          </div>
+        {/if}
+
         {#if current}
+          <div
+            class="lightbox-wipe-pane"
+            data-lightbox-wipe-active
+            style:transform={wipeActiveTransform}
+            style:transition={wipeTransitionStyle}
+            style:opacity={isVerticalDismissWipe ? Math.max(0.45, wipeVisuals.backdropOpacity) : undefined}
+          >
           <div
             class="media-frame"
             data-lightbox-media
@@ -607,6 +760,17 @@
               {/if}
             </NsfwBlur>
           </div>
+          </div>
+        {/if}
+
+        {#if adjacentWipePreview}
+          <div
+            class="lightbox-wipe-pane pointer-events-none"
+            data-lightbox-wipe-adjacent
+            style:transform={`translate3d(${adjacentWipePreview.offset}px, 0, 0)`}
+          >
+            {@render wipePreviewContent(adjacentWipePreview.src, adjacentWipePreview.isNsfw)}
+          </div>
         {/if}
 
         <div class="keyboard-hints">
@@ -631,7 +795,7 @@
     <div class="thumb-strip">
       {#each entities as item, i (item.id)}
         <Button variant="outline" size="icon"
-          onclick={() => (index = i)}
+          onclick={() => selectIndex(i)}
           bind:ref={() => stripThumbEls[i] ?? null, next => stripThumbEls[i] = next ?? undefined}
           class={cn("size-13 shrink-0 overflow-hidden p-0 opacity-60 hover:opacity-100 sm:size-12", i === index && "border-ring opacity-100")}
           aria-label={`Image ${i + 1}`}
@@ -701,6 +865,31 @@
        browser claims horizontal swipes for back-navigation and fires
        pointercancel mid-swipe, so swipe-to-navigate/dismiss never registers. */
     touch-action: none;
+  }
+
+  .lightbox-wipe-pane {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    will-change: transform;
+  }
+
+  .lightbox-wipe-pane :global(.lightbox-media-guard) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+  }
+
+  .lightbox-wipe-preview-image {
+    max-width: 98%;
+    max-height: 98%;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
   }
 
   .media-frame {
