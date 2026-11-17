@@ -35,6 +35,7 @@
     type WipeVisualState,
   } from "$lib/gestures/wipe-gesture";
   import NsfwBlur from "./nsfw/NsfwBlur.svelte";
+  import ComicReaderSpread from "./ComicReaderSpread.svelte";
   import {
     COMIC_FIT_MODE,
     comicPreloadIndexes,
@@ -868,53 +869,6 @@
         </Button>
       {/if}
 
-      {#snippet pagedSpreadContent(spreadImages: ImageListItemDto[], isEndPage: boolean, interactive: boolean)}
-        {#if isEndPage}
-          <div class="my-auto flex w-full flex-col items-center justify-center">
-            <div class="reader-next-chapter-page text-center">
-              <div class="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-text-accent">
-                {hasNextChapter ? "Next Chapter" : "No next chapter"}
-              </div>
-              <h3 class="mt-3 max-w-[32rem] text-center font-heading text-2xl font-semibold text-text-primary sm:text-4xl">
-                {chapterEndTitle}
-              </h3>
-              {#if interactive}
-                <Button variant="outline" size="sm"
-                  type="button"
-                  data-reader-control
-                  onclick={() => void goChapterEndAction()}
-                  disabled={nextChapterBusy}
-                  class="mt-6"
-                >
-                  {chapterEndActionLabel}
-                  <ChevronRight class="h-4 w-4" />
-                </Button>
-              {/if}
-            </div>
-          </div>
-        {:else}
-          <div
-            class={fitMode === COMIC_FIT_MODE.screen
-              ? `${activePagedClasses.spread} ${spreadImages.length > 1 ? "max-w-7xl" : "max-w-5xl"}`
-              : activePagedClasses.spread}
-          >
-            {#each spreadImages as image (image.id)}
-              <NsfwBlur isNsfw={false} class={activePagedClasses.blur}>
-                <img
-                  src={imageSrc(image)}
-                  alt={interactive ? image.title : ""}
-                  aria-hidden={interactive ? undefined : true}
-                  class={activePagedClasses.image}
-                  loading={interactive ? "eager" : undefined}
-                  decoding={interactive ? "sync" : undefined}
-                  draggable="false"
-                />
-              </NsfwBlur>
-            {/each}
-          </div>
-        {/if}
-      {/snippet}
-
       {#if outgoingSpread && (wipeVisuals.phase === "entering" || wipeVisuals.phase === "settling")}
         <div
           class="comic-wipe-pane pointer-events-none p-0 sm:px-14 sm:py-3"
@@ -922,7 +876,21 @@
           style:transform={`translate3d(${wipeVisuals.outgoingOffsetX}px, 0, 0)`}
           style:transition={wipeTransitionStyle}
         >
-          {@render pagedSpreadContent(outgoingSpread.spreadImages, outgoingSpread.isEndPage, false)}
+          <ComicReaderSpread
+            spreadImages={outgoingSpread.spreadImages}
+            isEndPage={outgoingSpread.isEndPage}
+            interactive={false}
+            {fitMode}
+            spreadClass={activePagedClasses.spread}
+            blurClass={activePagedClasses.blur}
+            imageClass={activePagedClasses.image}
+            {hasNextChapter}
+            {chapterEndTitle}
+            {chapterEndActionLabel}
+            {nextChapterBusy}
+            {imageSrc}
+            onChapterEndAction={() => void goChapterEndAction()}
+          />
         </div>
       {/if}
 
@@ -943,13 +911,23 @@
           style:transition={wipeTransitionStyle}
           style:opacity={isVerticalDismissWipe ? Math.max(0.45, wipeVisuals.backdropOpacity) : undefined}
         >
-          {@render pagedSpreadContent(
-            displayedSpread
+          <ComicReaderSpread
+            spreadImages={displayedSpread
               .map((pageIndex) => images[pageIndex])
-              .filter((img): img is ImageListItemDto => Boolean(img)),
-            showingChapterEndPage,
-            true,
-          )}
+              .filter((img): img is ImageListItemDto => Boolean(img))}
+            isEndPage={showingChapterEndPage}
+            interactive={true}
+            {fitMode}
+            spreadClass={activePagedClasses.spread}
+            blurClass={activePagedClasses.blur}
+            imageClass={activePagedClasses.image}
+            {hasNextChapter}
+            {chapterEndTitle}
+            {chapterEndActionLabel}
+            {nextChapterBusy}
+            {imageSrc}
+            onChapterEndAction={() => void goChapterEndAction()}
+          />
         </div>
       </div>
 
@@ -959,7 +937,21 @@
           data-comic-wipe-adjacent
           style:transform={`translate3d(${adjacentWipePreview.offset}px, 0, 0)`}
         >
-          {@render pagedSpreadContent(adjacentWipePreview.spreadImages, adjacentWipePreview.isEndPage, false)}
+          <ComicReaderSpread
+            spreadImages={adjacentWipePreview.spreadImages}
+            isEndPage={adjacentWipePreview.isEndPage}
+            interactive={false}
+            {fitMode}
+            spreadClass={activePagedClasses.spread}
+            blurClass={activePagedClasses.blur}
+            imageClass={activePagedClasses.image}
+            {hasNextChapter}
+            {chapterEndTitle}
+            {chapterEndActionLabel}
+            {nextChapterBusy}
+            {imageSrc}
+            onChapterEndAction={() => void goChapterEndAction()}
+          />
         </div>
       {/if}
     </div>

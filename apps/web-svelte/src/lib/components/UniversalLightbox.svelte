@@ -1,7 +1,7 @@
 <script lang="ts">
   import { browser } from "$app/environment";
   import { onMount, untrack, type Snippet } from "svelte";
-  import { Button, Dialog, cn, prefersReducedMotion } from "@prismedia/ui-svelte";
+  import { Dialog, prefersReducedMotion } from "@prismedia/ui-svelte";
   import { getCapability } from "$lib/api/capabilities";
   import { positiveNumberValue } from "$lib/utils/format";
   import { createNavigationKeyHandler } from "$lib/keyboard/navigation-keyboard";
@@ -16,7 +16,9 @@
   } from "$lib/gestures/wipe-gesture";
   import NsfwBlur from "./nsfw/NsfwBlur.svelte";
   import UniversalLightboxChrome from "./UniversalLightboxChrome.svelte";
+  import UniversalLightboxThumbStrip from "./UniversalLightboxThumbStrip.svelte";
   import UniversalLightboxVideoStage from "./UniversalLightboxVideoStage.svelte";
+  import UniversalLightboxWipeOverlays from "./UniversalLightboxWipeOverlays.svelte";
   import type { VideoPlayerHandle } from "./VideoPlayer.svelte";
   import {
     buildLightboxImageSources,
@@ -89,7 +91,6 @@
   let failedPosterSrcs = $state<Record<string, boolean>>({});
   let imageSourceIndex = $state(0);
   let imageSourcesExhausted = $state(false);
-  let stripThumbEls: Array<HTMLButtonElement | undefined> = $state([]);
   let panning = $state(false);
   let isAnimating = $state(false);
   let transitionTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -230,12 +231,6 @@
 
   $effect(() => {
     onIndexChange?.(index);
-  });
-
-  $effect(() => {
-    const el = stripThumbEls[index];
-    if (!el?.scrollIntoView) return;
-    el.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
   });
 
   function resetStagePlaybackAndTransform() {
@@ -740,30 +735,13 @@
         ondblclick={(e) => gestureHandler.onDoubleClick(e)}
         style:cursor={!isCurrentVideo && isZoomedBeyondFit(scale, fitScale) ? (panning ? "grabbing" : "grab") : "default"}
       >
-        {#snippet wipePreviewContent(src: string | null, isNsfw: boolean)}
-          <NsfwBlur {isNsfw} class="lightbox-media-guard">
-            {#if src}
-              <img
-                {src}
-                alt=""
-                aria-hidden="true"
-                class="lightbox-wipe-preview-image"
-                draggable="false"
-              />
-            {/if}
-          </NsfwBlur>
-        {/snippet}
-
-        {#if outgoingSnapshot && (wipeVisuals.phase === "entering" || wipeVisuals.phase === "settling")}
-          <div
-            class="lightbox-wipe-pane pointer-events-none"
-            data-lightbox-wipe-outgoing
-            style:transform={`translate3d(${wipeVisuals.outgoingOffsetX}px, 0, 0)`}
-            style:transition={wipeTransitionStyle}
-          >
-            {@render wipePreviewContent(outgoingSnapshot.src, outgoingSnapshot.isNsfw)}
-          </div>
-        {/if}
+        <UniversalLightboxWipeOverlays
+          outgoing={outgoingSnapshot}
+          adjacent={adjacentWipePreview}
+          showOutgoing={wipeVisuals.phase === "entering" || wipeVisuals.phase === "settling"}
+          outgoingOffsetX={wipeVisuals.outgoingOffsetX}
+          transitionStyle={wipeTransitionStyle}
+        />
 
         {#if current}
           <div
@@ -859,16 +837,6 @@
           </div>
         {/if}
 
-        {#if adjacentWipePreview}
-          <div
-            class="lightbox-wipe-pane pointer-events-none"
-            data-lightbox-wipe-adjacent
-            style:transform={`translate3d(${adjacentWipePreview.offset}px, 0, 0)`}
-          >
-            {@render wipePreviewContent(adjacentWipePreview.src, adjacentWipePreview.isNsfw)}
-          </div>
-        {/if}
-
         <div class="keyboard-hints">
           {keyboardHintText}
         </div>
@@ -887,24 +855,7 @@
     onResetZoom={resetTransform}
   />
 
-  {#if entities.length > 1}
-    <div class="thumb-strip">
-      {#each entities as item, i (item.id)}
-        <Button variant="outline" size="icon"
-          onclick={() => selectIndex(i)}
-          bind:ref={() => stripThumbEls[i] ?? null, next => stripThumbEls[i] = next ?? undefined}
-          class={cn("size-13 shrink-0 overflow-hidden p-0 opacity-60 hover:opacity-100 sm:size-12", i === index && "border-ring opacity-100")}
-          aria-label={`Image ${i + 1}`}
-        >
-          {#if item.coverUrl}
-            <img src={item.coverUrl} alt="" loading="lazy" class="size-full object-cover" />
-          {:else}
-            <span>{i + 1}</span>
-          {/if}
-        </Button>
-      {/each}
-    </div>
-  {/if}
+  <UniversalLightboxThumbStrip {entities} {index} onSelect={selectIndex} />
 </div>
 </Dialog>
 
@@ -921,14 +872,6 @@
     isolation: isolate;
     background: #000;
     color: var(--color-text-primary, #f2eed8);
-  }
-
-  .thumb-strip {
-    position: relative;
-    z-index: 20;
-    border-color: var(--color-border-subtle, #1c2235);
-    background: rgb(0 0 0 / 0.72);
-    backdrop-filter: blur(var(--glass-blur-md));
   }
 
   .stage-row {
@@ -970,22 +913,6 @@
     align-items: center;
     justify-content: center;
     will-change: transform;
-  }
-
-  .lightbox-wipe-pane :global(.lightbox-media-guard) {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    height: 100%;
-  }
-
-  .lightbox-wipe-preview-image {
-    max-width: 98%;
-    max-height: 98%;
-    object-fit: contain;
-    pointer-events: none;
-    user-select: none;
   }
 
   .media-frame {
@@ -1052,31 +979,9 @@
     text-transform: uppercase;
   }
 
-  .thumb-strip {
-    display: flex;
-    gap: 0.35rem;
-    overflow-x: auto;
-    border-top: 1px solid var(--color-border-subtle, #1c2235);
-    /* Keep the strip clear of the device's home indicator / gesture area so the
-       thumbnails stay tappable instead of sitting flush against the edge. */
-    padding: 0.4rem 0.5rem calc(0.4rem + env(safe-area-inset-bottom, 0px));
-  }
-
-
-
-
   @media (max-width: 640px) {
     .keyboard-hints {
       display: none;
     }
-
-    /* Larger, more separated targets and extra bottom clearance make the strip
-       comfortable to use on touch devices. */
-    .thumb-strip {
-      gap: 0.45rem;
-      padding: 0.5rem 0.5rem calc(0.55rem + env(safe-area-inset-bottom, 0px));
-    }
-
-
   }
 </style>
