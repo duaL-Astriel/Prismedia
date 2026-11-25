@@ -722,6 +722,45 @@ describe("ComicReader", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("bounds the paged active stage and spread height chain in screen and height modes while keeping width scrollable", async () => {
+    const { container, getByLabelText } = render(ComicReader, {
+      props: {
+        images,
+        initialIndex: 0,
+        initialFitMode: COMIC_FIT_MODE.screen,
+        title: "Comic",
+        onClose: vi.fn(),
+      },
+    });
+
+    const root = readerRoot(container);
+    const activeStage = root.querySelector("[data-comic-wipe-active]") as HTMLElement;
+
+    const assertBoundedHeightChain = () => {
+      const spreadEl = activeStage.firstElementChild as HTMLElement;
+      const blurEl = spreadEl.firstElementChild as HTMLElement;
+      expect(activeStage).toHaveClass("h-full", "min-h-0", "flex-1");
+      expect(activeStage).not.toHaveClass("flex-[1_0_auto]");
+      expect(spreadEl).toHaveClass("h-full", "min-h-0");
+      expect(blurEl).toHaveClass("h-full", "min-h-0");
+    };
+
+    // Screen mode: bounded height chain prevents tall images from clipping on the bottom.
+    assertBoundedHeightChain();
+    expect(activeStage).toHaveClass("w-full");
+
+    // Fit to height: bounded height chain constrains image height while w-max min-w-full allows horizontal scroll.
+    await fireEvent.click(getByLabelText("Fit to height"));
+    assertBoundedHeightChain();
+    expect(activeStage).toHaveClass("w-max", "min-w-full");
+    expect(root.querySelector(".reader-stage-paged img")).toHaveClass("max-h-full");
+
+    // Fit to width: active stage grows vertically so tall pages scroll cleanly.
+    await fireEvent.click(getByLabelText("Fit to width"));
+    expect(activeStage).toHaveClass("min-h-full", "flex-[1_0_auto]");
+    expect(activeStage).not.toHaveClass("h-full");
+  });
+
   it("does not flip pages on horizontal drag while fit-to-height can scroll horizontally", async () => {
     const onIndexChange = vi.fn();
     const { container } = render(ComicReader, {

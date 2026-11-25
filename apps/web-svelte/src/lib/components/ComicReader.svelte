@@ -143,25 +143,28 @@
 
   const PAGED_FIT_CLASSES: Record<
     ComicFitMode,
-    { stageOverflow: string; spread: string; blur: string; image: string }
+    { stageOverflow: string; activeStage: string; spread: string; blur: string; image: string }
   > = {
     [COMIC_FIT_MODE.screen]: {
       stageOverflow: "overflow-hidden",
-      spread: "mx-auto my-auto flex h-full w-full items-center justify-center gap-2",
-      blur: "flex h-full min-w-0 flex-1 items-center justify-center",
-      image: "max-h-full max-w-full object-contain shadow-[0_0_30px_rgba(0,0,0,0.45)]",
+      activeStage: "h-full min-h-0 flex-1 w-full",
+      spread: "mx-auto my-auto flex h-full min-h-0 w-full items-center justify-center gap-2",
+      blur: "flex h-full min-h-0 min-w-0 flex-1 items-center justify-center",
+      image: "min-h-0 min-w-0 max-h-full max-w-full object-contain shadow-[0_0_30px_rgba(0,0,0,0.45)]",
     },
     [COMIC_FIT_MODE.width]: {
       stageOverflow: "overflow-y-auto overflow-x-hidden",
+      activeStage: "min-h-full flex-[1_0_auto] w-full",
       spread: "mx-auto my-auto flex w-full items-start justify-center gap-2",
       blur: "flex min-w-0 flex-1 justify-center",
       image: "block h-auto w-full shadow-[0_0_30px_rgba(0,0,0,0.45)]",
     },
     [COMIC_FIT_MODE.height]: {
       stageOverflow: "overflow-x-auto overflow-y-hidden",
-      spread: "mx-auto flex h-full w-max min-w-full items-center justify-center gap-2",
-      blur: "flex h-full shrink-0 items-center justify-center",
-      image: "block h-full w-auto max-w-none shadow-[0_0_30px_rgba(0,0,0,0.45)]",
+      activeStage: "h-full min-h-0 flex-1 w-max min-w-full",
+      spread: "mx-auto flex h-full min-h-0 w-max min-w-full items-center justify-center gap-2",
+      blur: "flex h-full min-h-0 shrink-0 items-center justify-center",
+      image: "block h-full max-h-full w-auto max-w-none shadow-[0_0_30px_rgba(0,0,0,0.45)]",
     },
   };
 
@@ -905,7 +908,7 @@
         onpointercancel={clearReaderPointerGesture}
       >
         <div
-          class="comic-wipe-active-stage"
+          class={`comic-wipe-active-stage ${activePagedClasses.activeStage}`}
           data-comic-wipe-active
           style:transform={wipeActiveTransform}
           style:transition={wipeTransitionStyle}
@@ -974,10 +977,7 @@
 
   .comic-wipe-active-stage {
     display: flex;
-    flex: 1 0 auto;
     flex-direction: column;
-    width: 100%;
-    min-height: 100%;
     will-change: transform;
   }
 
@@ -986,8 +986,7 @@
     inset: 0;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    overflow: hidden;
     will-change: transform;
   }
 </style>
