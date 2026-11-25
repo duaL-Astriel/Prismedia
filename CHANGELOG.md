@@ -235,7 +235,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
-### Fixed
+- Pages in the comic reader no longer get cut off at the bottom in Fit to screen and Fit to height modes when an image is taller than the viewport.
 
 - The library grid filter drawer now stays anchored beneath the sticky search toolbar and floats above grid content while scrolling instead of remaining above the grid.
 
